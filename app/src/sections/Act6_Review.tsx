@@ -89,6 +89,7 @@ export default function Act6_Review() {
   const [currentIdx, setCurrentIdx] = useState(1); // start on cartographer
   const [isAutoPlaying, setIsAutoPlaying] = useState(false);
   const [editorResult, setEditorResult] = useState<EditorRoundResult | null>(null);
+  const [editorError, setEditorError] = useState<string | null>(null);
 
   const currentKey = ORDER[currentIdx];
   const currentSpeaker = SPEAKERS.find((s) => s.key === currentKey)!;
@@ -104,6 +105,7 @@ export default function Act6_Review() {
   }, [isAutoPlaying, currentIdx]);
 
   const handleFetchEditorRound = useCallback(async () => {
+    setEditorError(null);
     try {
       const allReactions: Record<string, unknown> = {};
       paragraphReactions.forEach((map, pid) => {
@@ -121,15 +123,12 @@ export default function Act6_Review() {
       const json = JSON.parse(res);
       setEditorResult(json);
       setEditorRoundResult(json);
-    } catch {
-      setEditorResult({
-        editor_note: '整体读下来，这篇草稿在情感共鸣上做得不错，尤其是第二段的代际观察。但第三段的位置陈旧问题必须解决，否则读者会在那里大量流失。建议把经济压力的讨论压缩到一句话，腾出空间给代际信任的微观机制。',
-        suggestions: [
-          { paragraph_id: 3, issue: '位置陈旧，与答场高赞答案重复', from_reader: '测绘师', direction: '删除或从代际信任的微观机制重写' },
-          { paragraph_id: 2, issue: '抽象概念过多，缺少数据支撑', from_reader: '学霸型', direction: '补充婚姻成本占收入比例的数据对照' },
-          { paragraph_id: 2, issue: '最强反对意见未被显式处理', from_reader: '问难者', direction: '加入「家境优渥者也不愿结婚」的反例回应' },
-        ],
-      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[Act6] Editor round failed:', msg);
+      setEditorError(`主编圆桌获取失败：${msg}`);
+      setEditorResult(null);
+      setEditorRoundResult(null);
     }
   }, [draft, paragraphReactions, globalPrediction, quoteHunterResult, setEditorRoundResult]);
 
@@ -444,18 +443,25 @@ export default function Act6_Review() {
             </motion.button>
           )}
           {!editorResult && (
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={handleFetchEditorRound}
-              className="px-6 py-2.5 rounded text-white font-sans font-medium text-ui transition-all"
-              style={{
-                backgroundColor: '#5D2A2C',
-                letterSpacing: '0.05em',
-              }}
-            >
-              生成主编综合
-            </motion.button>
+            <div className="flex items-center gap-3">
+              {editorError && (
+                <span className="text-micro font-sans" style={{ color: '#A53A2C' }}>
+                  {editorError}
+                </span>
+              )}
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={handleFetchEditorRound}
+                className="px-6 py-2.5 rounded text-white font-sans font-medium text-ui transition-all"
+                style={{
+                  backgroundColor: '#5D2A2C',
+                  letterSpacing: '0.05em',
+                }}
+              >
+                生成主编综合
+              </motion.button>
+            </div>
           )}
         </div>
       </div>

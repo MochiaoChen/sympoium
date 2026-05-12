@@ -22,10 +22,12 @@ export default function Act4_Draft() {
   const setSkeleton = useSymposiumStore((s) => s.setSkeleton);
 
   const [isGenerating, setIsGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleGenerateSkeleton = useCallback(async () => {
     if (!selectedGap) return;
     setIsGenerating(true);
+    setError(null);
     try {
       const prompt = `${SKELETON_GENERATION_PROMPT}\n\n写作角度：${selectedGap.description}\n推理：${selectedGap.reasoning}`;
       const res = await callKimi([
@@ -35,38 +37,10 @@ export default function Act4_Draft() {
       const json = JSON.parse(res);
       setSkeleton(json);
     } catch (e) {
-      console.warn('Skeleton generation failed', e);
-      // Fallback mock skeleton
-      setSkeleton({
-        title_candidates: [
-          '年轻人不是不愿结婚，是不愿继承上一代关于婚姻的整套设定',
-          '代际信任崩塌：婚姻意愿下降的真正根因',
-          '看完父母怎么走完一生，我开始怀疑这套设定',
-        ],
-        opening_hooks: [
-          '上世纪八十年代我父母结婚的时候，村里整个屋场只有几间砖房...',
-          '婚姻已经不是一个改善生活的工具。它的边际成本远远超过了它能带来的边际收益。',
-          '不是我不想要他们那样的生活，是看到他们那样的生活之后突然明白那不是我想要的。',
-        ],
-        key_arguments: [
-          {
-            point: '代际信任崩塌是婚姻意愿下降的根因',
-            evidence_suggestion: '引用家庭社会学研究，或具体家庭案例',
-            counter_defense: '回应「家境优渥的年轻人应该更愿意结婚」的反驳',
-          },
-          {
-            point: '婚姻作为风险对冲工具的失效',
-            evidence_suggestion: '引用离婚率与结婚率的交叉数据',
-            counter_defense: '区分「婚姻制度」与「具体婚姻关系」',
-          },
-          {
-            point: '城市化与熟人社会解体对婚姻中介的影响',
-            evidence_suggestion: '对比城乡婚姻介绍方式的差异',
-            counter_defense: '承认 dating app 的替代作用，但指出信任背书的缺失',
-          },
-        ],
-        structure: ['用父母结婚的具体场景引入', '提出核心论点：代际信任崩塌', '分三个层次展开论证', '回应最强反对意见', '回到个人体验，升华主题'],
-      });
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[Act4] Skeleton generation failed:', msg);
+      setError(`骨架生成失败：${msg}`);
+      setSkeleton(null);
     } finally {
       setIsGenerating(false);
     }
@@ -145,6 +119,11 @@ export default function Act4_Draft() {
             >
               {isGenerating ? <LoadingDots color="#fff" /> : '生成骨架'}
             </motion.button>
+            {error && (
+              <p className="text-micro font-sans mt-3" style={{ color: '#A53A2C' }}>
+                {error}
+              </p>
+            )}
           </motion.div>
         )}
 

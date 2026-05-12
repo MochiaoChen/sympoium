@@ -61,6 +61,7 @@ export default function Act5_Rehearsal() {
 
   const [isRehearsing, setIsRehearsing] = useState(false);
   const [showResults, setShowResults] = useState(false);
+  const [rehearsalErrors, setRehearsalErrors] = useState<string[]>([]);
   const [hoveredPara, setHoveredPara] = useState<number | null>(null);
 
   const paragraphs = useMemo(() => {
@@ -74,8 +75,10 @@ export default function Act5_Rehearsal() {
     if (paragraphs.length === 0) return;
     setIsRehearsing(true);
     setShowResults(false);
+    setRehearsalErrors([]);
 
     const newReactions = new Map<number, Map<string, ParagraphReaction>>();
+    const errors: string[] = [];
 
     for (let pid = 0; pid < paragraphs.length; pid++) {
       newReactions.set(pid, new Map());
@@ -102,13 +105,11 @@ export default function Act5_Rehearsal() {
               emoji: json.emoji ?? '😐',
               highlight_phrase: json.highlight_phrase ?? null,
             });
-          } catch {
-            newReactions.get(pid)!.set(persona.key, {
-              danmu: '...',
-              continue_prob: 50,
-              emoji: '😐',
-              highlight_phrase: null,
-            });
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            console.error(`[Act5] Persona ${persona.key} failed:`, msg);
+            errors.push(`${persona.name}反应获取失败`);
+            // Do NOT set fallback data for this persona
           }
         })
       );
@@ -126,16 +127,11 @@ export default function Act5_Rehearsal() {
         0.3
       );
       setGlobalPrediction(JSON.parse(gp));
-    } catch {
-      setGlobalPrediction({
-        like_rate: 67,
-        comment_rate: 42,
-        favorite_rate: 78,
-        swipe_away_rate: 23,
-        first_three_lines_survival: 68,
-        risk_points: [{ text: '经济因素论述较为常见', reason: '容易被读者预判' }],
-        rationale: '整体质量不错，但有一处位置陈旧。',
-      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[Act5] Global prediction failed:', msg);
+      errors.push('全局预测获取失败');
+      setGlobalPrediction(null);
     }
 
     // Quote hunter
@@ -148,18 +144,16 @@ export default function Act5_Rehearsal() {
         0.6
       );
       setQuoteHunterResult(JSON.parse(qh));
-    } catch {
-      setQuoteHunterResult({
-        quotes: [
-          {
-            text: '看到上一代用这套设定走完一生之后的真实状态，开始怀疑这套设定本身',
-            viral_score: 92,
-            tag: '共鸣',
-          },
-        ],
-      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[Act5] Quote hunter failed:', msg);
+      errors.push('金句猎人获取失败');
+      setQuoteHunterResult(null);
     }
 
+    if (errors.length > 0) {
+      setRehearsalErrors(errors);
+    }
     setIsRehearsing(false);
     setShowResults(true);
   }, [draft, paragraphs, setParagraphReactions, setGlobalPrediction, setQuoteHunterResult]);
@@ -288,7 +282,25 @@ export default function Act5_Rehearsal() {
                           <div className="flex flex-col gap-2">
                             {PERSONAS.map((p) => {
                               const r = reactions.get(p.key);
-                              if (!r) return null;
+                              if (!r) {
+                                return (
+                                  <div
+                                    key={p.key}
+                                    className="p-2 rounded"
+                                    style={{ backgroundColor: '#F4E8E6', border: '1px solid #E8E3D8' }}
+                                  >
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span className="text-xs">❌</span>
+                                      <span className="text-micro font-sans font-medium" style={{ color: '#A53A2C' }}>
+                                        {p.name}
+                                      </span>
+                                    </div>
+                                    <p className="text-caption font-serif" style={{ color: '#A53A2C' }}>
+                                      获取失败
+                                    </p>
+                                  </div>
+                                );
+                              }
                               return (
                                 <div
                                   key={p.key}
@@ -369,6 +381,27 @@ export default function Act5_Rehearsal() {
             </span>
           </div>
         )}
+
+        {/* Error banner */}
+        <AnimatePresence>
+          {showResults && rehearsalErrors.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="p-4 rounded"
+              style={{ backgroundColor: '#F4E8E6', border: '1px solid #E8E3D8' }}
+            >
+              <p className="text-micro font-sans font-medium mb-1" style={{ color: '#A53A2C' }}>
+                部分数据获取失败
+              </p>
+              {rehearsalErrors.map((err, i) => (
+                <p key={i} className="text-micro font-sans" style={{ color: '#8B3A2C' }}>
+                  · {err}
+                </p>
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Global prediction bars */}
         <AnimatePresence>
