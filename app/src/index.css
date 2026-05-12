@@ -1,0 +1,99 @@
+@import '@fontsource/noto-serif-sc/400.css';
+@import '@fontsource/noto-serif-sc/500.css';
+@import '@fontsource/noto-serif-sc/700.css';
+@import '@fontsource/noto-sans-sc/400.css';
+@import '@fontsource/noto-sans-sc/500.css';
+@import '@fontsource/jetbrains-mono/400.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* ─── Symposium Design Tokens ───────────────────────────────────── */
+    --paper: #F7F4ED;
+    --paper-surface: #FBF9F3;
+    --paper-white: #FFFFFF;
+    --paper-border: #E8E3D8;
+    --ink-1: #1C1A18;
+    --ink-2: #4A4641;
+    --ink-3: #8A847C;
+    --ink-4: #B8B1A5;
+    --crimson: #5D2A2C;
+    --crimson-light: #8B4548;
+    --crimson-dark: #3D1B1D;
+    --crimson-paper: #F4E8E6;
+
+    /* shadcn compat */
+    --background: 40 33% 93%;
+    --foreground: 30 14% 9%;
+    --card: 40 24% 97%;
+    --card-foreground: 30 14% 9%;
+    --popover: 40 33% 93%;
+    --popover-foreground: 30 14% 9%;
+    --primary: 0 36% 27%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 40 24% 97%;
+    --secondary-foreground: 30 14% 9%;
+    --muted: 40 24% 92%;
+    --muted-foreground: 30 9% 38%;
+    --accent: 40 24% 92%;
+    --accent-foreground: 30 14% 9%;
+    --destructive: 6 49% 35%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 40 18% 88%;
+    --input: 40 18% 88%;
+    --ring: 0 36% 27%;
+    --radius: 4px;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    font-family: 'Noto Sans SC', 'Source Han Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background-color: var(--paper);
+    color: var(--ink-1);
+    letter-spacing: 0.02em;
+  }
+
+  body {
+    font-family: 'Noto Sans SC', 'Source Han Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background-color: var(--paper);
+    color: var(--ink-1);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Noto Serif SC', 'Source Han Serif SC', 'Lora', serif;
+    letter-spacing: 0.02em;
+  }
+
+  /* 中西文混排缓冲 */
+  :lang(zh) + :lang(en),
+  :lang(en) + :lang(zh) {
+    margin-left: 0.15em;
+  }
+}
+
+@layer base {
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--paper);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--ink-4);
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--ink-3);
+  }
+}

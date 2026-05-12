@@ -1,0 +1,1031 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>会饮 · 第六幕 · 重审</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;700&family=Noto+Sans+SC:wght@400;500&family=Lora:ital,wght@0,400;1,400&display=swap"
+  rel="stylesheet"
+/>
+<style>
+:root {
+  /* Paper & ink */
+  --paper: #F7F4ED;
+  --paper-surface: #FBF9F3;
+  --paper-white: #FFFFFF;
+  --paper-border: #E8E3D8;
+  --paper-border-soft: #EFEBE2;
+
+  --ink-1: #1C1A18;
+  --ink-2: #4A4641;
+  --ink-3: #8A847C;
+  --ink-4: #B8B1A5;
+
+  /* Brand */
+  --crimson: #5D2A2C;
+  --crimson-light: #8B4548;
+  --crimson-paper: #F4E8E6;
+
+  /* Agent palette */
+  --agent-host: #0066FF;
+  --agent-cartographer: #3D5C42;
+  --agent-challenger: #A53A2C;
+  --agent-critic: #8B6B3A;
+  --agent-student: #1F3A5F;
+  --agent-resonant: #8B5A6B;
+  --agent-quotehunter: #8B7355;
+
+  /* Heat */
+  --heat-cold: #C8D4E0;
+  --heat-mild: #DFE2DD;
+  --heat-warm: #E8D5B7;
+
+  /* Motion */
+  --ease-signature: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body { height: 100%; }
+
+body {
+  font-family: 'Noto Serif SC', 'Source Han Serif SC', serif;
+  background: var(--paper);
+  color: var(--ink-1);
+  letter-spacing: 0.02em;
+  font-size: 16px;
+  line-height: 1.7;
+  overflow: hidden;
+
+  /* Subtle paper warmth */
+  background-image:
+    radial-gradient(ellipse 80% 60% at 20% 10%, rgba(255, 250, 235, 0.5), transparent 60%),
+    radial-gradient(ellipse 70% 50% at 85% 90%, rgba(218, 205, 180, 0.25), transparent 65%);
+}
+
+/* SVG grain overlay applied via pseudo */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.4;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.7  0 0 0 0 0.65  0 0 0 0 0.55  0 0 0 0.08 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  z-index: 0;
+}
+
+.app {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-rows: 64px 56px 1fr 72px;
+  height: 100vh;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 48px;
+}
+
+/* ---------------- Header ---------------- */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--paper-border);
+}
+
+.logo {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.logo-mark {
+  font-family: 'Noto Serif SC', serif;
+  font-weight: 700;
+  font-size: 22px;
+  letter-spacing: 0.08em;
+  color: var(--ink-1);
+}
+.logo-sub {
+  font-family: 'Lora', serif;
+  font-style: italic;
+  font-size: 12px;
+  color: var(--ink-3);
+  letter-spacing: 0.04em;
+}
+
+.user-area {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-family: 'Noto Sans SC', sans-serif;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+.user-area .session-id {
+  font-family: 'Lora', serif;
+  font-style: italic;
+  letter-spacing: 0.05em;
+}
+.user-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--paper-surface);
+  border: 1px solid var(--paper-border);
+  display: grid;
+  place-items: center;
+  font-family: 'Noto Serif SC', serif;
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+/* ---------------- Timeline ---------------- */
+.timeline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.timeline-track {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+.timeline-step {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+.timeline-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink-4);
+  position: relative;
+  flex-shrink: 0;
+}
+.timeline-step.done .timeline-dot {
+  background: var(--crimson);
+}
+.timeline-step.current .timeline-dot {
+  background: var(--paper);
+  border: 2px solid var(--crimson);
+  width: 12px;
+  height: 12px;
+  box-shadow: 0 0 0 4px rgba(93, 42, 44, 0.08);
+}
+.timeline-label {
+  font-family: 'Noto Sans SC', sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+  margin-left: 8px;
+  min-width: 32px;
+}
+.timeline-step.current .timeline-label {
+  color: var(--crimson);
+  font-weight: 500;
+}
+.timeline-step.done .timeline-label {
+  color: var(--ink-2);
+}
+.timeline-line {
+  width: 36px;
+  height: 1px;
+  background: var(--paper-border);
+}
+.timeline-step.done + .timeline-line {
+  background: var(--crimson);
+  opacity: 0.4;
+}
+
+.timeline-act {
+  position: absolute;
+  left: 0;
+  font-family: 'Lora', serif;
+  font-style: italic;
+  font-size: 12px;
+  color: var(--ink-3);
+  letter-spacing: 0.06em;
+}
+.timeline-act .act-roman {
+  color: var(--crimson);
+  font-weight: 500;
+  margin-right: 6px;
+}
+
+/* ---------------- Stage ---------------- */
+.stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+/* Subtle elliptical table outline */
+.table-outline {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 78%;
+  height: 78%;
+  transform: translate(-50%, -50%);
+  border: 1px dashed var(--paper-border);
+  border-radius: 50%;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* ---------------- Draft Card (center) ---------------- */
+.draft-card {
+  position: relative;
+  z-index: 3;
+  width: 460px;
+  background: var(--paper-white);
+  border: 1px solid var(--paper-border);
+  border-radius: 4px;
+  padding: 32px 36px 28px;
+  box-shadow:
+    0 1px 0 var(--paper-border-soft),
+    0 8px 32px rgba(28, 26, 24, 0.04),
+    0 2px 8px rgba(28, 26, 24, 0.02);
+}
+
+.draft-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: 'Noto Sans SC', sans-serif;
+  font-size: 11px;
+  color: var(--ink-3);
+  letter-spacing: 0.1em;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--paper-border-soft);
+}
+.draft-meta-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.draft-meta-tag .dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ink-3);
+}
+
+.draft-title {
+  font-family: 'Noto Serif SC', serif;
+  font-weight: 700;
+  font-size: 18px;
+  line-height: 1.5;
+  color: var(--ink-1);
+  margin-bottom: 16px;
+  letter-spacing: 0.01em;
+}
+
+.paragraph {
+  position: relative;
+  font-size: 13px;
+  line-height: 1.85;
+  color: var(--ink-2);
+  margin-bottom: 12px;
+  padding: 6px 10px;
+  border-left: 2px solid transparent;
+  transition: background 200ms var(--ease-signature);
+}
+.paragraph .leader {
+  font-family: 'Noto Sans SC', sans-serif;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--ink-4);
+  margin-right: 8px;
+  vertical-align: 1px;
+}
+
+/* Heat states */
+.paragraph.warm {
+  background: rgba(232, 213, 183, 0.18);
+  border-left-color: var(--heat-warm);
+}
+.paragraph.mild {
+  background: rgba(223, 226, 221, 0.25);
+  border-left-color: var(--heat-mild);
+}
+.paragraph.cold {
+  background: rgba(200, 212, 224, 0.28);
+  border-left-color: var(--heat-cold);
+}
+.paragraph.cold::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: -20px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--agent-cartographer);
+  transform: translateY(-50%);
+  opacity: 0.85;
+  box-shadow: 0 0 0 3px rgba(61, 92, 66, 0.15);
+  animation: pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(61, 92, 66, 0.15); }
+  50% { box-shadow: 0 0 0 6px rgba(61, 92, 66, 0.06); }
+}
+
+/* ---------------- Agent badges ---------------- */
+.agent {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 280ms var(--ease-signature);
+  transform: translate(-50%, -50%);
+}
+.agent:hover { opacity: 1 !important; }
+
+.agent-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--agent-color);
+  transition: all 280ms var(--ease-signature);
+}
+.agent-name {
+  font-family: 'Noto Serif SC', serif;
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--ink-1);
+  letter-spacing: 0.05em;
+}
+.agent-role {
+  font-family: 'Noto Sans SC', sans-serif;
+  font-size: 10px;
+  color: var(--ink-3);
+  letter-spacing: 0.1em;
+}
+
+/* Inactive agents are dimmed */
+.agent:not(.active) {
+  opacity: 0.42;
+}
+.agent:not(.active):hover {
+  opacity: 0.72;
+}
+
+/* Active agent */
+.agent.active .agent-dot {
+  width: 12px;
+  height: 12px;
+  box-shadow: 0 0 0 4px var(--agent-color-soft, rgba(0,0,0,0.08));
+}
+.agent.active .agent-name {
+  color: var(--agent-color);
+  font-weight: 700;
+}
+
+/* Position each agent on the ellipse. The stage is roughly 1200x620 at 1280px viewport */
+.agent[data-name="host"] { top: 11%; left: 50%; }
+.agent[data-name="critic"] { top: 24%; left: 77%; }
+.agent[data-name="student"] { top: 50%; left: 87%; }
+.agent[data-name="resonant"] { top: 76%; left: 73%; }
+.agent[data-name="quotehunter"] { top: 76%; left: 27%; }
+.agent[data-name="challenger"] { top: 50%; left: 13%; }
+.agent[data-name="cartographer"] { top: 24%; left: 23%; }
+
+/* Color binding */
+.agent[data-name="host"] { --agent-color: var(--agent-host); --agent-color-soft: rgba(0,102,255,0.1); }
+.agent[data-name="cartographer"] { --agent-color: var(--agent-cartographer); --agent-color-soft: rgba(61,92,66,0.12); }
+.agent[data-name="challenger"] { --agent-color: var(--agent-challenger); --agent-color-soft: rgba(165,58,44,0.12); }
+.agent[data-name="critic"] { --agent-color: var(--agent-critic); --agent-color-soft: rgba(139,107,58,0.12); }
+.agent[data-name="student"] { --agent-color: var(--agent-student); --agent-color-soft: rgba(31,58,95,0.12); }
+.agent[data-name="resonant"] { --agent-color: var(--agent-resonant); --agent-color-soft: rgba(139,90,107,0.12); }
+.agent[data-name="quotehunter"] { --agent-color: var(--agent-quotehunter); --agent-color-soft: rgba(139,115,85,0.12); }
+
+/* When active, nudge toward center */
+.agent.active[data-name="host"] { top: 13%; }
+.agent.active[data-name="cartographer"] { top: 26%; left: 25%; }
+.agent.active[data-name="critic"] { top: 26%; left: 75%; }
+.agent.active[data-name="challenger"] { left: 15%; }
+.agent.active[data-name="student"] { left: 85%; }
+.agent.active[data-name="resonant"] { top: 74%; left: 71%; }
+.agent.active[data-name="quotehunter"] { top: 74%; left: 29%; }
+
+/* ---------------- Speech card ---------------- */
+.speech-card {
+  position: absolute;
+  z-index: 5;
+  width: 340px;
+  background: var(--paper-white);
+  border: 1px solid var(--paper-border);
+  border-left: 3px solid var(--agent-color, var(--ink-2));
+  border-radius: 3px;
+  padding: 20px 22px;
+  box-shadow:
+    0 2px 0 var(--paper-border-soft),
+    0 12px 36px rgba(28, 26, 24, 0.06),
+    0 4px 12px rgba(28, 26, 24, 0.03);
+  transition: opacity 320ms var(--ease-signature), transform 320ms var(--ease-signature);
+}
+
+.speech-card.entering {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.speech-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--paper-border-soft);
+}
+.speech-attribution {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.speech-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--agent-color, var(--ink-2));
+}
+.speech-name {
+  font-family: 'Noto Serif SC', serif;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--ink-1);
+  letter-spacing: 0.05em;
+}
+.speech-role {
+  font-family: 'Noto Sans SC', sans-serif;
+  font-size: 11px;
+  color: var(--ink-3);
+  letter-spacing: 0.1em;
+}
+
+.speech-body {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 13.5px;
+  line-height: 1.85;
+  color: var(--ink-2);
+  letter-spacing: 0.015em;
+}
+
+.speech-body .keyword {
+  color: var(--ink-1);
+  font-weight: 500;
+  background: linear-gradient(transparent 60%, var(--paper-border) 60%, var(--paper-border) 88%, transparent 88%);
+  padding: 0 1px;
+}
+
+.speech-body .target {
+  color: var(--agent-color, var(--ink-1));
+  font-weight: 500;
+  border-bottom: 1px solid var(--agent-color, var(--ink-2));
+  padding-bottom: 1px;
+}
+
+.speech-footer {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--paper-border-soft);
+  font-family: 'Noto Sans SC', sans-serif;
+  font-size: 11px;
+  color: var(--ink-3);
+  letter-spacing: 0.08em;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.speech-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.speech-tag::before {
+  content: '';
+  width: 4px;
+  height: 4px;
+  background: var(--agent-color, var(--ink-3));
+  border-radius: 50%;
+  opacity: 0.6;
+}
+.speech-nav {
+  display: flex;
+  gap: 8px;
+}
+.speech-nav-btn {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--paper-border);
+  border-radius: 3px;
+  background: var(--paper-surface);
+  cursor: pointer;
+  color: var(--ink-3);
+  font-family: 'Noto Sans SC', sans-serif;
+  font-size: 13px;
+  transition: all 180ms var(--ease-signature);
+}
+.speech-nav-btn:hover {
+  border-color: var(--crimson);
+  color: var(--crimson);
+}
+
+/* Speech card position (default: emerges from cartographer area, upper-left of draft) */
+.speech-card.from-cartographer { top: 32%; left: 41%; transform: translate(-100%, -50%); }
+.speech-card.from-critic { top: 32%; left: 59%; transform: translate(0, -50%); }
+.speech-card.from-host { top: 22%; left: 50%; transform: translate(-50%, 0); }
+.speech-card.from-challenger { top: 50%; left: 27%; transform: translate(-100%, -50%); }
+.speech-card.from-student { top: 50%; left: 73%; transform: translate(0, -50%); }
+.speech-card.from-resonant { top: 70%; left: 60%; transform: translate(0, 0); }
+.speech-card.from-quotehunter { top: 70%; left: 40%; transform: translate(-100%, 0); }
+
+/* ---------------- Connection line ---------------- */
+.connection-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 4;
+}
+.connection-path {
+  fill: none;
+  stroke: var(--agent-cartographer);
+  stroke-width: 1.25;
+  stroke-dasharray: 3 5;
+  opacity: 0.55;
+  animation: dashflow 22s linear infinite;
+}
+
+@keyframes dashflow {
+  to { stroke-dashoffset: -200; }
+}
+
+/* Floating label on the connection line */
+.connection-label {
+  position: absolute;
+  z-index: 4;
+  font-family: 'Lora', serif;
+  font-style: italic;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--agent-cartographer);
+  background: var(--paper);
+  padding: 2px 8px;
+  border: 1px solid var(--paper-border);
+  border-radius: 2px;
+  white-space: nowrap;
+}
+
+/* ---------------- Footer ---------------- */
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--paper-border);
+  font-family: 'Noto Sans SC', sans-serif;
+  font-size: 13px;
+}
+.footer-status {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--ink-3);
+}
+.footer-status .speakers-passed {
+  font-family: 'Lora', serif;
+  font-style: italic;
+  letter-spacing: 0.05em;
+}
+.footer-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.btn {
+  font-family: 'Noto Sans SC', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 10px 22px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 180ms var(--ease-signature);
+  letter-spacing: 0.05em;
+  border: 1px solid transparent;
+}
+.btn-secondary {
+  background: transparent;
+  color: var(--ink-1);
+  border-color: var(--ink-2);
+}
+.btn-secondary:hover {
+  background: var(--paper-surface);
+  border-color: var(--crimson);
+  color: var(--crimson);
+}
+.btn-primary {
+  background: var(--crimson);
+  color: var(--paper-white);
+}
+.btn-primary:hover {
+  background: var(--crimson-light);
+}
+
+.btn-primary .glyph {
+  margin-left: 8px;
+  font-family: 'Lora', serif;
+}
+
+/* ---------------- Small details ---------------- */
+.act-title {
+  position: absolute;
+  top: 16px;
+  left: 0;
+  font-family: 'Noto Serif SC', serif;
+  font-size: 12px;
+  color: var(--ink-3);
+  letter-spacing: 0.18em;
+  z-index: 2;
+}
+.act-title .num {
+  font-family: 'Lora', serif;
+  font-style: italic;
+  color: var(--crimson);
+  margin-right: 8px;
+  font-size: 13px;
+}
+
+.stage-note {
+  position: absolute;
+  bottom: 16px;
+  right: 0;
+  font-family: 'Lora', serif;
+  font-style: italic;
+  font-size: 11px;
+  color: var(--ink-3);
+  letter-spacing: 0.06em;
+  z-index: 2;
+}
+
+@media (max-width: 1100px) {
+  .app { padding: 0 24px; }
+  .draft-card { width: 380px; padding: 24px 28px; }
+  .speech-card { width: 280px; padding: 16px 18px; }
+}
+</style>
+</head>
+
+<body>
+<div class="app">
+
+  <!-- ========== HEADER ========== -->
+  <header class="header">
+    <div class="logo">
+      <span class="logo-mark">会饮</span>
+      <span class="logo-sub">Symposium · for Zhihu writing</span>
+    </div>
+
+    <div class="user-area">
+      <span>Mochiao</span>
+      <span class="session-id">session no. 0247</span>
+      <div class="user-avatar">M</div>
+    </div>
+  </header>
+
+  <!-- ========== TIMELINE ========== -->
+  <nav class="timeline">
+    <div class="timeline-act">
+      <span class="act-roman">Ⅵ</span>
+      <span>重审 · the council reviews</span>
+    </div>
+
+    <div class="timeline-track">
+      <div class="timeline-step done"><div class="timeline-dot"></div><span class="timeline-label">起意</span></div>
+      <div class="timeline-line"></div>
+      <div class="timeline-step done"><div class="timeline-dot"></div><span class="timeline-label">择题</span></div>
+      <div class="timeline-line"></div>
+      <div class="timeline-step done"><div class="timeline-dot"></div><span class="timeline-label">寻位</span></div>
+      <div class="timeline-line"></div>
+      <div class="timeline-step done"><div class="timeline-dot"></div><span class="timeline-label">下笔</span></div>
+      <div class="timeline-line"></div>
+      <div class="timeline-step done"><div class="timeline-dot"></div><span class="timeline-label">预演</span></div>
+      <div class="timeline-line"></div>
+      <div class="timeline-step current"><div class="timeline-dot"></div><span class="timeline-label">重审</span></div>
+      <div class="timeline-line"></div>
+      <div class="timeline-step"><div class="timeline-dot"></div><span class="timeline-label">出酒</span></div>
+    </div>
+  </nav>
+
+  <!-- ========== STAGE ========== -->
+  <main class="stage">
+
+    <div class="act-title"><span class="num">scene</span> 七位客人围坐圆桌，依次发言</div>
+
+    <div class="table-outline"></div>
+
+    <!-- Seven Agents around the table -->
+    <div class="agent" data-name="host">
+      <div class="agent-dot"></div>
+      <div class="agent-name">刘看山</div>
+      <div class="agent-role">主编</div>
+    </div>
+
+    <div class="agent active" data-name="cartographer">
+      <div class="agent-dot"></div>
+      <div class="agent-name">测绘师</div>
+      <div class="agent-role">答场分析</div>
+    </div>
+
+    <div class="agent" data-name="critic">
+      <div class="agent-dot"></div>
+      <div class="agent-name">校雠</div>
+      <div class="agent-role">文字精校</div>
+    </div>
+
+    <div class="agent" data-name="challenger">
+      <div class="agent-dot"></div>
+      <div class="agent-name">问难者</div>
+      <div class="agent-role">立场审判</div>
+    </div>
+
+    <div class="agent" data-name="student">
+      <div class="agent-dot"></div>
+      <div class="agent-name">学霸型</div>
+      <div class="agent-role">众生</div>
+    </div>
+
+    <div class="agent" data-name="resonant">
+      <div class="agent-dot"></div>
+      <div class="agent-name">共鸣型</div>
+      <div class="agent-role">众生</div>
+    </div>
+
+    <div class="agent" data-name="quotehunter">
+      <div class="agent-dot"></div>
+      <div class="agent-name">金句猎人</div>
+      <div class="agent-role">众生</div>
+    </div>
+
+    <!-- Central draft card -->
+    <div class="draft-card">
+      <div class="draft-meta">
+        <span class="draft-meta-tag"><span class="dot"></span>草稿 v1.0</span>
+        <span>2,340 字 · 3 段</span>
+      </div>
+
+      <h2 class="draft-title">年轻人不是不愿结婚，是不愿继承上一代关于婚姻的整套设定</h2>
+
+      <p class="paragraph mild" id="para-1">
+        <span class="leader">§1</span>
+        上世纪八十年代我父母结婚的时候，村里整个屋场只有几间砖房，他们俩攒了三年钱盖起三间瓦房，那是他们那一代最被认可的人生成就。
+      </p>
+
+      <p class="paragraph warm" id="para-2">
+        <span class="leader">§2</span>
+        但今天的年轻人发现，婚姻已经不是一个改善生活的工具。它的边际成本远远超过了它能带来的边际收益。更关键的是，他们看到上一代用这套设定走完一生之后的真实状态，开始怀疑这套设定本身。
+      </p>
+
+      <p class="paragraph cold" id="para-3">
+        <span class="leader">§3</span>
+        当然，房价高、工作压力大、生活成本上升，这些经济因素也是绕不过去的现实，构成了年轻人推迟婚姻的直接原因。
+      </p>
+    </div>
+
+    <!-- Speech card (cartographer is currently speaking) -->
+    <div class="speech-card from-cartographer" id="speech-card" style="--agent-color: var(--agent-cartographer);">
+      <div class="speech-header">
+        <div class="speech-attribution">
+          <span class="speech-dot"></span>
+          <span class="speech-name" id="speech-name">测绘师</span>
+        </div>
+        <span class="speech-role" id="speech-role">答场分析</span>
+      </div>
+
+      <div class="speech-body" id="speech-body">
+        <span class="target">第三段</span>实际上在重复答场里 5 个高赞答案都讲过的<span class="keyword">经济压力论</span>，覆盖度 87%。读者觉得无聊不是文字问题，是位置陈旧。建议删除这一段，或者从代际信任的微观机制重写。
+      </div>
+
+      <div class="speech-footer">
+        <span class="speech-tag" id="speech-tag">指向第三段</span>
+        <div class="speech-nav">
+          <button class="speech-nav-btn" id="prev-speaker">‹</button>
+          <button class="speech-nav-btn" id="next-speaker">›</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Connection SVG from speech card to cold paragraph -->
+    <svg class="connection-svg" id="connection-svg">
+      <path class="connection-path" id="connection-path" d="" />
+    </svg>
+
+    <div class="stage-note">第 2 位发言 / 共 7 位 · 全部发言完毕后由主编综合</div>
+  </main>
+
+  <!-- ========== FOOTER ========== -->
+  <footer class="footer">
+    <div class="footer-status">
+      <span class="speakers-passed">已发言 1 / 7</span>
+      <span>·</span>
+      <span>建议清单将在所有客人发言结束后生成</span>
+    </div>
+    <div class="footer-actions">
+      <button class="btn btn-secondary">返回草稿</button>
+      <button class="btn btn-primary">采纳建议并修订 <span class="glyph">→</span></button>
+    </div>
+  </footer>
+
+</div>
+
+<script>
+// ============= Speech content for each agent =============
+const speeches = {
+  host: {
+    name: '刘看山',
+    role: '主编',
+    body: `综合大家的意见，三条最关键的修改建议会在所有客人发言完毕后给出。目前来看，<span class="target">第三段</span>的位置陈旧是最显眼的硬伤，<span class="keyword">代际信任崩塌</span>这条主线需要在开头更早建立。结构层面，建议把砖房细节前置作为更具体的钩子。`,
+    tag: '主持发言中',
+    targetPara: 'para-2',
+    color: 'var(--agent-host)'
+  },
+  cartographer: {
+    name: '测绘师',
+    role: '答场分析',
+    body: `<span class="target">第三段</span>实际上在重复答场里 5 个高赞答案都讲过的<span class="keyword">经济压力论</span>，覆盖度 87%。读者觉得无聊不是文字问题，是位置陈旧。建议删除这一段，或者从代际信任的微观机制重写。`,
+    tag: '指向第三段',
+    targetPara: 'para-3',
+    color: 'var(--agent-cartographer)'
+  },
+  critic: {
+    name: '校雠',
+    role: '文字精校',
+    body: `第二段"<span class="keyword">更关键的是</span>"这个连接词可以删掉，前一句已经做完了对比，连词反而稀释了节奏。另外"<span class="target">怀疑这套设定本身</span>"过于抽象，可以改成"怀疑这套设定承诺的回报"，落到具体处。`,
+    tag: '指向第二段',
+    targetPara: 'para-2',
+    color: 'var(--agent-critic)'
+  },
+  challenger: {
+    name: '问难者',
+    role: '立场审判',
+    body: `代际信任崩塌这个角度站得住，但你必须回应一个明显的反对：<span class="keyword">如果是信任问题，那么家境优渥、父母关系稳定的年轻人应该更愿意结婚</span>。事实数据并不支持这一点。这个反例在文中需要被显式处理。`,
+    tag: '指向第二段',
+    targetPara: 'para-2',
+    color: 'var(--agent-challenger)'
+  },
+  student: {
+    name: '学霸型',
+    role: '众生 / 科技理性',
+    body: `砖房那个细节很真实。但我想要一个<span class="keyword">数据对照</span>：上世纪八十年代的婚姻成本占家庭收入的多少比例，今天又是多少？没有这个对照，"<span class="target">成本超过收益</span>"这句话就只是修辞。`,
+    tag: '指向第一、二段',
+    targetPara: 'para-1',
+    color: 'var(--agent-student)'
+  },
+  resonant: {
+    name: '共鸣型',
+    role: '众生 / 情感共鸣',
+    body: `这就是我一直想说但说不清楚的话。我父母结婚 30 多年了，<span class="target">不是我不想要他们那样的生活</span>，是看到他们那样的生活之后突然明白那不是我想要的。第二段把这个感觉写出来了。`,
+    tag: '为第二段点亮',
+    targetPara: 'para-2',
+    color: 'var(--agent-resonant)'
+  },
+  quotehunter: {
+    name: '金句猎人',
+    role: '众生 / 金句采集',
+    body: `这一句可以做<span class="keyword">标题截图</span>："<span class="target">看到上一代用这套设定走完一生之后的真实状态，开始怀疑这套设定本身</span>。"稍微改一下节奏会更好截图，比如断成两个短句：看完上一代怎么走完一生，开始怀疑这套设定。`,
+    tag: '挑出可截图金句',
+    targetPara: 'para-2',
+    color: 'var(--agent-quotehunter)'
+  }
+};
+
+const order = ['host', 'cartographer', 'critic', 'challenger', 'student', 'resonant', 'quotehunter'];
+let currentIdx = 1; // start on cartographer
+
+// ============= Update functions =============
+function setActiveAgent(name) {
+  // Update agent badges
+  document.querySelectorAll('.agent').forEach(el => {
+    el.classList.toggle('active', el.dataset.name === name);
+  });
+
+  const data = speeches[name];
+
+  // Update speech card content
+  const card = document.getElementById('speech-card');
+  card.classList.add('entering');
+
+  // remove all position classes
+  card.className = 'speech-card entering from-' + name;
+  card.style.setProperty('--agent-color', data.color);
+
+  setTimeout(() => {
+    document.getElementById('speech-name').textContent = data.name;
+    document.getElementById('speech-role').textContent = data.role;
+    document.getElementById('speech-body').innerHTML = data.body;
+    document.getElementById('speech-tag').textContent = data.tag;
+
+    card.classList.remove('entering');
+
+    // redraw connection
+    drawConnection(name, data.targetPara, data.color);
+  }, 120);
+
+  currentIdx = order.indexOf(name);
+  updateStageNote();
+}
+
+function updateStageNote() {
+  const note = document.querySelector('.stage-note');
+  note.textContent = `第 ${currentIdx + 1} 位发言 / 共 7 位 · 全部发言完毕后由主编综合`;
+  document.querySelector('.speakers-passed').textContent = `已发言 ${currentIdx + 1} / 7`;
+}
+
+function drawConnection(agentName, paraId, color) {
+  const svg = document.getElementById('connection-svg');
+  const path = document.getElementById('connection-path');
+
+  const card = document.getElementById('speech-card');
+  const para = document.getElementById(paraId);
+  const stage = document.querySelector('.stage');
+
+  if (!card || !para || !stage) return;
+
+  const cardRect = card.getBoundingClientRect();
+  const paraRect = para.getBoundingClientRect();
+  const stageRect = stage.getBoundingClientRect();
+
+  // Start from the side of the speech card closest to the paragraph
+  const cardCenterX = cardRect.left + cardRect.width / 2;
+  const paraCenterX = paraRect.left + paraRect.width / 2;
+
+  let startX, startY, endX, endY;
+
+  if (cardCenterX < paraCenterX) {
+    // card is on the left, line goes to left side of paragraph
+    startX = cardRect.right - stageRect.left;
+    startY = cardRect.top + cardRect.height / 2 - stageRect.top;
+    endX = paraRect.left - stageRect.left;
+    endY = paraRect.top + paraRect.height / 2 - stageRect.top;
+  } else {
+    // card is on the right
+    startX = cardRect.left - stageRect.left;
+    startY = cardRect.top + cardRect.height / 2 - stageRect.top;
+    endX = paraRect.right - stageRect.left;
+    endY = paraRect.top + paraRect.height / 2 - stageRect.top;
+  }
+
+  // Curved path
+  const midX = (startX + endX) / 2;
+  const ctrlOffsetX = (endX - startX) * 0.35;
+  const ctrlOffsetY = -20;
+
+  const d = `M ${startX} ${startY} C ${startX + ctrlOffsetX} ${startY + ctrlOffsetY}, ${endX - ctrlOffsetX} ${endY + ctrlOffsetY}, ${endX} ${endY}`;
+  path.setAttribute('d', d);
+  path.style.stroke = color;
+}
+
+// ============= Event bindings =============
+document.querySelectorAll('.agent').forEach(el => {
+  el.addEventListener('click', () => setActiveAgent(el.dataset.name));
+});
+
+document.getElementById('prev-speaker').addEventListener('click', () => {
+  const next = (currentIdx - 1 + order.length) % order.length;
+  setActiveAgent(order[next]);
+});
+
+document.getElementById('next-speaker').addEventListener('click', () => {
+  const next = (currentIdx + 1) % order.length;
+  setActiveAgent(order[next]);
+});
+
+// Initialize on load and reposition on resize
+window.addEventListener('load', () => {
+  setTimeout(() => drawConnection('cartographer', 'para-3', 'var(--agent-cartographer)'), 100);
+});
+window.addEventListener('resize', () => {
+  const name = order[currentIdx];
+  drawConnection(name, speeches[name].targetPara, speeches[name].color);
+});
+</script>
+
+</body>
+</html>
