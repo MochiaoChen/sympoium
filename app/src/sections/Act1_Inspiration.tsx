@@ -7,7 +7,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { TrendingUp, ExternalLink } from 'lucide-react';
+import { TrendingUp, ExternalLink, Sparkles } from 'lucide-react';
 import { fetchHotList } from '@/services/api';
 import { useSymposiumStore } from '@/store/useSymposiumStore';
 import AgentBadge from '@/components/AgentBadge';
@@ -19,6 +19,7 @@ export default function Act1_Inspiration() {
   const setHotList = useSymposiumStore((s) => s.setHotList);
   const setSelectedTopic = useSymposiumStore((s) => s.setSelectedTopic);
   const setIsLoading = useSymposiumStore((s) => s.setIsLoading);
+  const zhihuUser = useSymposiumStore((s) => s.zhihuUser);
 
   const [customInput, setCustomInput] = useState('');
   const [isFetching, setIsFetching] = useState(false);
@@ -95,6 +96,23 @@ export default function Act1_Inspiration() {
                         <LoadingDots />
                         <span style={{ color: '#8A847C' }}>正在观测今日热榜...</span>
                       </div>
+                    ) : zhihuUser ? (
+                      <>
+                        <p>
+                          欢迎回来，
+                          <span className="font-semibold" style={{ color: '#5D2A2C' }}>
+                            {zhihuUser.fullname}
+                          </span>
+                          。
+                        </p>
+                        <p className="mt-2">
+                          在下望气者。我已经看过你的知乎主页
+                          {zhihuUser.headline ? (
+                            <span style={{ color: '#4A4641' }}>（{zhihuUser.headline}）</span>
+                          ) : null}
+                          ，下面这份热榜是按你关注的方向重新排过序的。挑一个最对你胃口的，我们开始。
+                        </p>
+                      </>
                     ) : (
                       <>
                         <p>欢迎来到会饮。</p>
@@ -118,11 +136,28 @@ export default function Act1_Inspiration() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.6 }}
           >
-            <div className="flex items-center gap-2 mb-4">
+            <div className="flex items-center gap-2 mb-4 flex-wrap">
               <TrendingUp size={18} color="#5D2A2C" />
               <h3 className="font-serif text-h2 font-bold" style={{ color: '#1C1A18' }}>
                 今日热榜 · 值得关注
               </h3>
+              {zhihuUser && (
+                <motion.span
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: 0.4 }}
+                  className="flex items-center gap-1 ml-2 px-2 py-0.5 rounded text-micro font-sans font-medium"
+                  style={{
+                    backgroundColor: 'rgba(93, 42, 44, 0.08)',
+                    color: '#5D2A2C',
+                    letterSpacing: '0.05em',
+                  }}
+                  title="基于你的知乎账号定制"
+                >
+                  <Sparkles size={11} />
+                  为 @{zhihuUser.fullname} 定制
+                </motion.span>
+              )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

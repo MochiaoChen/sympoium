@@ -5,9 +5,9 @@
  * 每行展示问题标题、回答数、饱和度评分。
  */
 
-import { useEffect, useState, useCallback } from 'react';
-import { motion } from 'framer-motion';
-import { MessageCircle, ThumbsUp, TrendingUp, TrendingDown, ArrowRight } from 'lucide-react';
+import { useEffect, useState, useCallback, Fragment } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { MessageCircle, ThumbsUp, TrendingUp, TrendingDown, ArrowRight, ExternalLink } from 'lucide-react';
 import { searchZhihu } from '@/services/api';
 import type { SearchItem } from '@/services/api';
 import { useSymposiumStore } from '@/store/useSymposiumStore';
@@ -148,72 +148,156 @@ export default function Act2_QuestionSelect() {
             results.map((item, idx) => {
               const sat = getSaturation(item.VoteUpCount);
               const isSelected = selectedQuestion?.title === item.Title;
+              const previewText = (item.ContentText ?? '').trim();
+              const hasPreview = previewText.length > 0;
+              const hasUrl = !!item.Url && /^https?:/.test(item.Url);
 
               return (
-                <motion.button
-                  key={idx}
-                  initial={{ opacity: 0, x: -40 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{
-                    duration: 0.5,
-                    delay: 0.3 + idx * 0.1,
-                    ease: [0.22, 0.61, 0.36, 1] as [number, number, number, number],
-                  }}
-                  whileHover={{ x: 4 }}
-                  onClick={() => handleSelect(item)}
-                  className="relative text-left p-5 rounded transition-all"
-                  style={{
-                    backgroundColor: '#FBF9F3',
-                    border: isSelected ? '1px solid #5D2A2C' : '1px solid #E8E3D8',
-                    boxShadow: isSelected
-                      ? '0 2px 8px rgba(28, 26, 24, 0.06)'
-                      : '0 1px 3px rgba(28, 26, 24, 0.04)',
-                    borderLeft: isSelected ? '3px solid #5D2A2C' : '1px solid #E8E3D8',
-                  }}
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <h3
-                      className="font-serif text-h3 font-medium flex-1"
-                      style={{ color: '#1C1A18' }}
-                    >
-                      {item.Title}
-                    </h3>
-                    <span
-                      className="shrink-0 px-3 py-1 rounded text-caption text-white font-sans font-medium"
-                      style={{ backgroundColor: sat.color, letterSpacing: '0.05em' }}
-                    >
-                      热度 {sat.value}%
-                    </span>
-                  </div>
+                <Fragment key={idx}>
+                  <motion.button
+                    initial={{ opacity: 0, x: -40 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{
+                      duration: 0.5,
+                      delay: 0.3 + idx * 0.1,
+                      ease: [0.22, 0.61, 0.36, 1] as [number, number, number, number],
+                    }}
+                    whileHover={{ x: 4 }}
+                    onClick={() => handleSelect(item)}
+                    className="relative text-left p-5 rounded transition-all"
+                    style={{
+                      backgroundColor: '#FBF9F3',
+                      border: isSelected ? '1px solid #5D2A2C' : '1px solid #E8E3D8',
+                      boxShadow: isSelected
+                        ? '0 2px 8px rgba(28, 26, 24, 0.06)'
+                        : '0 1px 3px rgba(28, 26, 24, 0.04)',
+                      borderLeft: isSelected ? '3px solid #5D2A2C' : '1px solid #E8E3D8',
+                    }}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <h3
+                        className="font-serif text-h3 font-medium flex-1"
+                        style={{ color: '#1C1A18' }}
+                      >
+                        {item.Title}
+                      </h3>
+                      <span
+                        className="shrink-0 px-3 py-1 rounded text-caption text-white font-sans font-medium"
+                        style={{ backgroundColor: sat.color, letterSpacing: '0.05em' }}
+                      >
+                        热度 {sat.value}%
+                      </span>
+                    </div>
 
-                  <div className="flex items-center gap-4 mt-3">
-                    <span className="flex items-center gap-1 text-caption font-sans" style={{ color: '#8A847C' }}>
-                      <ThumbsUp size={13} />
-                      {item.VoteUpCount >= 10000
-                        ? `${(item.VoteUpCount / 10000).toFixed(1)}万`
-                        : item.VoteUpCount}
-                      赞同
-                    </span>
-                    <span className="flex items-center gap-1 text-caption font-sans" style={{ color: '#8A847C' }}>
-                      <MessageCircle size={13} />
-                      {item.CommentCount} 评论
-                    </span>
-                    <span className="flex items-center gap-1 text-caption font-sans" style={{ color: '#8A847C' }}>
-                      {getTrendArrow(sat.level)}
-                      {sat.level === 'high' ? '讨论饱和' : sat.level === 'medium' ? '讨论适中' : '新鲜角度'}
-                    </span>
-                  </div>
+                    <div className="flex items-center gap-4 mt-3">
+                      <span className="flex items-center gap-1 text-caption font-sans" style={{ color: '#8A847C' }}>
+                        <ThumbsUp size={13} />
+                        {item.VoteUpCount >= 10000
+                          ? `${(item.VoteUpCount / 10000).toFixed(1)}万`
+                          : item.VoteUpCount}
+                        赞同
+                      </span>
+                      <span className="flex items-center gap-1 text-caption font-sans" style={{ color: '#8A847C' }}>
+                        <MessageCircle size={13} />
+                        {item.CommentCount} 评论
+                      </span>
+                      <span className="flex items-center gap-1 text-caption font-sans" style={{ color: '#8A847C' }}>
+                        {getTrendArrow(sat.level)}
+                        {sat.level === 'high' ? '讨论饱和' : sat.level === 'medium' ? '讨论适中' : '新鲜角度'}
+                      </span>
+                    </div>
 
-                  <div className="mt-3 h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: '#E8E3D8' }}>
-                    <motion.div
-                      className="h-full rounded-full"
-                      style={{ backgroundColor: sat.color }}
-                      initial={{ width: 0 }}
-                      animate={{ width: `${sat.value}%` }}
-                      transition={{ duration: 0.6, delay: 0.8 + idx * 0.1 }}
-                    />
-                  </div>
-                </motion.button>
+                    <div className="mt-3 h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: '#E8E3D8' }}>
+                      <motion.div
+                        className="h-full rounded-full"
+                        style={{ backgroundColor: sat.color }}
+                        initial={{ width: 0 }}
+                        animate={{ width: `${sat.value}%` }}
+                        transition={{ duration: 0.6, delay: 0.8 + idx * 0.1 }}
+                      />
+                    </div>
+                  </motion.button>
+
+                  {/* Preview card — only when this question is selected */}
+                  <AnimatePresence>
+                    {isSelected && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        transition={{ duration: 0.25 }}
+                        className="-mt-1 ml-4 p-5 rounded"
+                        style={{
+                          backgroundColor: '#FFFFFF',
+                          border: '1px solid #E8E3D8',
+                          borderLeft: '3px solid #D9B88E',
+                        }}
+                      >
+                        {/* Author row */}
+                        {(item.AuthorName || item.AuthorAvatar) && (
+                          <div className="flex items-center gap-2 mb-3">
+                            {item.AuthorAvatar && (
+                              <img
+                                src={item.AuthorAvatar}
+                                alt={item.AuthorName ?? '作者'}
+                                referrerPolicy="no-referrer"
+                                className="w-6 h-6 rounded-full object-cover"
+                                style={{ border: '1px solid #E8E3D8' }}
+                              />
+                            )}
+                            <span className="text-caption font-serif font-medium" style={{ color: '#1C1A18' }}>
+                              {item.AuthorName ?? '匿名作者'}
+                            </span>
+                            {item.AuthorityLevel && (
+                              <span
+                                className="text-micro font-sans px-1.5 py-0.5 rounded"
+                                style={{ backgroundColor: '#F0EBE0', color: '#4A4641' }}
+                              >
+                                {item.AuthorityLevel}
+                              </span>
+                            )}
+                            <span className="text-micro font-sans" style={{ color: '#8A847C' }}>
+                              · {item.ContentType || 'Answer'}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Preview text */}
+                        {hasPreview ? (
+                          <p
+                            className="text-body font-serif mb-4 line-clamp-6"
+                            style={{ color: '#4A4641', lineHeight: 1.75, letterSpacing: '0.015em' }}
+                          >
+                            {previewText}
+                          </p>
+                        ) : (
+                          <p className="text-caption font-sans mb-4" style={{ color: '#8A847C' }}>
+                            （此条无摘要预览，可点右侧链接到知乎查看完整内容）
+                          </p>
+                        )}
+
+                        {/* Footer: open on Zhihu */}
+                        <div className="flex items-center justify-between pt-3" style={{ borderTop: '1px solid #F0EBE0' }}>
+                          <span className="text-micro font-sans" style={{ color: '#8A847C', letterSpacing: '0.08em' }}>
+                            点"下一步"进入第三幕分析答场,或先到知乎看完整内容
+                          </span>
+                          {hasUrl && (
+                            <a
+                              href={item.Url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1.5 text-caption font-sans font-medium transition-all hover:translate-x-0.5"
+                              style={{ color: '#5D2A2C' }}
+                            >
+                              在知乎打开
+                              <ExternalLink size={13} />
+                            </a>
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </Fragment>
               );
             })}
         </div>

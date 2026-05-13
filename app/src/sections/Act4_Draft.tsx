@@ -7,12 +7,14 @@
  */
 
 import { useState, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Wand2, Check } from 'lucide-react';
 import { useSymposiumStore } from '@/store/useSymposiumStore';
 import AgentBadge from '@/components/AgentBadge';
 import LoadingDots from '@/components/LoadingDots';
 import { callLLM } from '@/services/api';
 import { SKELETON_GENERATION_PROMPT } from '@/data/agentPrompts';
+import { formatZhihuTypography } from '@/lib/typography';
 
 export default function Act4_Draft() {
   const selectedGap = useSymposiumStore((s) => s.selectedGap);
@@ -23,6 +25,20 @@ export default function Act4_Draft() {
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [justFormatted, setJustFormatted] = useState(false);
+
+  const handleFormat = useCallback(() => {
+    const next = formatZhihuTypography(draft);
+    if (next !== draft) {
+      setDraft(next);
+      setJustFormatted(true);
+      window.setTimeout(() => setJustFormatted(false), 1500);
+    } else {
+      // Already clean — flash the badge anyway so user sees it ran.
+      setJustFormatted(true);
+      window.setTimeout(() => setJustFormatted(false), 1500);
+    }
+  }, [draft, setDraft]);
 
   const handleGenerateSkeleton = useCallback(async () => {
     if (!selectedGap) return;
@@ -55,13 +71,57 @@ export default function Act4_Draft() {
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-4 gap-3">
           <h3 className="font-serif text-h3 font-bold" style={{ color: '#1C1A18' }}>
             你的草稿
           </h3>
-          <span className="text-caption font-sans" style={{ color: '#8A847C' }}>
-            {draft.length} 字
-          </span>
+          <div className="flex items-center gap-3">
+            <motion.button
+              whileHover={draft ? { scale: 1.03 } : {}}
+              whileTap={draft ? { scale: 0.97 } : {}}
+              onClick={handleFormat}
+              disabled={!draft.trim()}
+              title="把英文直引号改为中文直角引号「」，并在中英文间补空格"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded text-caption font-sans font-medium transition-all"
+              style={{
+                border: '1px solid #4A4641',
+                color: draft.trim() ? '#1C1A18' : '#B8B1A5',
+                backgroundColor: 'transparent',
+                cursor: draft.trim() ? 'pointer' : 'not-allowed',
+                opacity: draft.trim() ? 1 : 0.5,
+              }}
+            >
+              <AnimatePresence mode="wait">
+                {justFormatted ? (
+                  <motion.span
+                    key="done"
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 4 }}
+                    className="flex items-center gap-1.5"
+                    style={{ color: '#4A6B42' }}
+                  >
+                    <Check size={14} />
+                    已排版
+                  </motion.span>
+                ) : (
+                  <motion.span
+                    key="idle"
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 4 }}
+                    className="flex items-center gap-1.5"
+                  >
+                    <Wand2 size={14} />
+                    一键排版
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </motion.button>
+            <span className="text-caption font-sans tabular-nums" style={{ color: '#8A847C' }}>
+              {draft.length} 字
+            </span>
+          </div>
         </div>
         <div
           className="flex-1 rounded overflow-hidden"
