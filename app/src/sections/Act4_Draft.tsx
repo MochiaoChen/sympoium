@@ -11,6 +11,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Wand2, Check } from 'lucide-react';
 import { useSymposiumStore } from '@/store/useSymposiumStore';
 import AgentBadge from '@/components/AgentBadge';
+import ChatPanel from '@/components/ChatPanel';
 import LoadingDots from '@/components/LoadingDots';
 import { callLLM } from '@/services/api';
 import { SKELETON_GENERATION_PROMPT } from '@/data/agentPrompts';
@@ -63,10 +64,10 @@ export default function Act4_Draft() {
   }, [selectedGap, setSkeleton]);
 
   return (
-    <div className="h-full flex gap-6 px-6 py-6 overflow-hidden">
+    <div className="h-full flex gap-4 px-6 py-6 overflow-hidden">
       {/* Left — Editor */}
       <motion.div
-        className="flex-1 flex flex-col max-w-prose-default"
+        className="flex-1 flex flex-col min-w-0"
         initial={{ opacity: 0, x: -40 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.5 }}
@@ -142,9 +143,9 @@ export default function Act4_Draft() {
         </div>
       </motion.div>
 
-      {/* Right — Skeleton sidebar */}
+      {/* Middle — Skeleton sidebar */}
       <motion.div
-        className="w-80 flex flex-col gap-4 overflow-y-auto"
+        className="w-64 shrink-0 flex flex-col gap-4 overflow-y-auto"
         initial={{ opacity: 0, x: 40 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.5, delay: 0.2 }}
@@ -308,6 +309,16 @@ export default function Act4_Draft() {
             </motion.div>
           </>
         )}
+      </motion.div>
+
+      {/* Right — AI Chat (全网搜 / 知乎搜 切换) */}
+      <motion.div
+        className="w-[360px] shrink-0 hidden xl:flex flex-col"
+        initial={{ opacity: 0, x: 40 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.5, delay: 0.3 }}
+      >
+        <ChatPanel />
       </motion.div>
     </div>
   );

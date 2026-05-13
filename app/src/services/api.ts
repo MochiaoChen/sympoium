@@ -421,6 +421,79 @@ function getDefaultProvider(): LLMProvider {
   return 'deepseek';
 }
 
+// ─── 知乎直答 (Zhihu Zhida) ──────────────────────────────────────────────────
+// OpenAI 兼容接口，POST https://developer.zhihu.com/v1/chat/completions
+// 鉴权复用 ZHIHU_ACCESS_SECRET (Bearer) + X-Request-Timestamp。
+// 模型：zhida-fast-1p5 | zhida-thinking-1p5 | zhida-agent
+
+export type ZhidaModel = 'zhida-fast-1p5' | 'zhida-thinking-1p5' | 'zhida-agent';
+
+function zhidaHeaders(): Record<string, string> {
+  return {
+    'Authorization': `Bearer ${ZHIHU_SECRET}`,
+    'Content-Type': 'application/json',
+    'X-Request-Timestamp': getTimestamp(),
+  };
+}
+
+export async function callZhida(
+  messages: { role: string; content: string }[],
+  model: ZhidaModel = 'zhida-thinking-1p5',
+): Promise<string> {
+  const res = await fetch('/api/zhihu/v1/chat/completions', {
+    method: 'POST',
+    headers: zhidaHeaders(),
+    body: JSON.stringify({ model, messages }),
+  });
+  if (!res.ok) throw new Error(`Zhida API error: ${res.status}`);
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content ?? '';
+}
+
+export async function callZhidaStream(
+  messages: { role: string; content: string }[],
+  onChunk: (chunk: string) => void,
+  model: ZhidaModel = 'zhida-thinking-1p5',
+): Promise<void> {
+  const res = await fetch('/api/zhihu/v1/chat/completions', {
+    method: 'POST',
+    headers: zhidaHeaders(),
+    body: JSON.stringify({ model, messages, stream: true }),
+  });
+  if (!res.ok) throw new Error(`Zhida stream error: ${res.status}`);
+
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error('No response body');
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data:')) continue;
+        const jsonStr = trimmed.slice(5).trim();
+        if (jsonStr === '[DONE]') return;
+        try {
+          const json = JSON.parse(jsonStr);
+          const delta = json.choices?.[0]?.delta?.content;
+          if (delta) onChunk(delta);
+        } catch {
+          // ignore malformed JSON
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 // ─── JSON-mode LLM helpers ───────────────────────────────────────────────────
 // Salvage a JSON object from a response that may be wrapped in code fences or
 // padded with prose. Mirrors AmongAnswers backend.kimi._strip_to_json.
