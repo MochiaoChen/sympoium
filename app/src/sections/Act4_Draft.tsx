@@ -8,10 +8,11 @@
 
 import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Wand2, Check } from 'lucide-react';
+import { Wand2, Check, Eye, EyeOff } from 'lucide-react';
 import { useSymposiumStore } from '@/store/useSymposiumStore';
 import AgentBadge from '@/components/AgentBadge';
 import ChatPanel from '@/components/ChatPanel';
+import MarkdownPreview from '@/components/MarkdownPreview';
 import LoadingDots from '@/components/LoadingDots';
 import { callLLM } from '@/services/api';
 import { SKELETON_GENERATION_PROMPT } from '@/data/agentPrompts';
@@ -27,6 +28,7 @@ export default function Act4_Draft() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [justFormatted, setJustFormatted] = useState(false);
+  const [showPreview, setShowPreview] = useState(true);
 
   const handleFormat = useCallback(() => {
     const next = formatZhihuTypography(draft);
@@ -78,6 +80,21 @@ export default function Act4_Draft() {
           </h3>
           <div className="flex items-center gap-3">
             <motion.button
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={() => setShowPreview((v) => !v)}
+              title={showPreview ? '隐藏预览，编辑器占满' : '显示预览'}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded text-caption font-sans font-medium transition-all"
+              style={{
+                border: '1px solid #4A4641',
+                color: '#1C1A18',
+                backgroundColor: showPreview ? 'rgba(93,42,44,0.08)' : 'transparent',
+              }}
+            >
+              {showPreview ? <Eye size={14} /> : <EyeOff size={14} />}
+              {showPreview ? '预览' : '只编辑'}
+            </motion.button>
+            <motion.button
               whileHover={draft ? { scale: 1.03 } : {}}
               whileTap={draft ? { scale: 0.97 } : {}}
               onClick={handleFormat}
@@ -124,22 +141,45 @@ export default function Act4_Draft() {
             </span>
           </div>
         </div>
-        <div
-          className="flex-1 rounded overflow-hidden"
-          style={{ backgroundColor: '#FBF9F3', border: '1px solid #E8E3D8' }}
-        >
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder="在这里写下你的草稿，或者粘贴已有内容..."
-            className="w-full h-full p-6 resize-none outline-none font-serif text-body-lg"
-            style={{
-              backgroundColor: 'transparent',
-              color: '#1C1A18',
-              lineHeight: 1.75,
-              letterSpacing: '0.02em',
-            }}
-          />
+        <div className="flex-1 flex gap-3 min-h-0">
+          {/* Editor textarea */}
+          <div
+            className="flex-1 rounded overflow-hidden min-w-0"
+            style={{ backgroundColor: '#FBF9F3', border: '1px solid #E8E3D8' }}
+          >
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="在这里写下你的草稿，或者粘贴已有内容..."
+              className="w-full h-full p-6 resize-none outline-none font-serif text-body-lg"
+              style={{
+                backgroundColor: 'transparent',
+                color: '#1C1A18',
+                lineHeight: 1.75,
+                letterSpacing: '0.02em',
+              }}
+            />
+          </div>
+          {/* Live markdown preview */}
+          <AnimatePresence>
+            {showPreview && (
+              <motion.div
+                initial={{ opacity: 0, width: 0 }}
+                animate={{ opacity: 1, width: '50%' }}
+                exit={{ opacity: 0, width: 0 }}
+                transition={{ duration: 0.25 }}
+                className="rounded overflow-hidden flex-shrink-0"
+                style={{
+                  backgroundColor: '#FFFFFF',
+                  border: '1px solid #E8E3D8',
+                }}
+              >
+                <div className="h-full overflow-y-auto">
+                  <MarkdownPreview source={draft} />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </motion.div>
 

@@ -83,6 +83,8 @@ export interface Cluster {
   cluster_id: string;
   label: string;
   answer_count: number;
+  /** 0-based indices into the topAnswers array; one answer ∈ exactly one cluster. */
+  member_indices: number[];
   total_upvotes: number;
   representative_summary: string;
   dimension: TerrainDimension;
