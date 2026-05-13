@@ -2,7 +2,7 @@
  * Navbar — 顶栏 + 横向时间轴
  *
  * 顶栏 64px：左侧 logo，右侧用户信息
- * 时间轴 48px：7 个小圆点，已完成的幕用绛红实心圆，当前幕用绛红空心圆带 2px 边框，未到达的幕用墨色三级实心圆
+ * 时间轴 48px：6 个小圆点，已完成的幕用绛红实心圆，当前幕用绛红空心圆带 2px 边框，未到达的幕用墨色三级实心圆
  */
 
 import { useCallback } from 'react';
@@ -120,7 +120,7 @@ export default function Navbar() {
 
   const handleClick = useCallback(
     (act: number) => {
-      if (act <= currentAct + 1 && act <= 7) {
+      if (act <= currentAct + 1 && act <= 6) {
         setCurrentAct(act);
       }
     },
@@ -162,7 +162,7 @@ export default function Navbar() {
         style={{ borderTop: '1px solid #E8E3D8' }}
       >
         <div className="flex items-center gap-0 max-w-2xl w-full justify-center px-4">
-          {Array.from({ length: 7 }, (_, i) => i + 1).map((act, idx) => {
+          {Array.from({ length: 6 }, (_, i) => i + 1).map((act, idx) => {
             const isCompleted = act < currentAct;
             const isCurrent = act === currentAct;
             const isUnlocked = act <= currentAct + 1;

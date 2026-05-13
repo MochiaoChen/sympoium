@@ -9,7 +9,6 @@ import { create } from 'zustand';
 import type {
   HotListItem,
   SearchItem,
-  ParagraphReaction,
   GlobalPrediction,
   QuoteHunterResult,
   EditorRoundResult,
@@ -24,7 +23,7 @@ import type {
 
 // Gap = blind spot from the TERRAIN model (Act 3 cartography).
 // Legacy fields (audit_verdict / strongest_objection / defense_strategy) are kept
-// optional so Act 6's "圆桌会" speeches continue to type-check; Act 3 derives
+// optional so Act 5's "圆桌会" speeches continue to type-check; Act 3 derives
 // audit_verdict from potential_value for backward-compatible UI.
 export interface Gap {
   id: string;
@@ -88,19 +87,15 @@ interface SymposiumState {
   skeleton: WritingSkeleton | null;
   setSkeleton: (s: WritingSkeleton | null) => void;
 
-  // Act 5 — 预演 (Rehearsal)
+  // Act 4 — 下笔 (Writing): draft setter lives here
   draft: string;
   setDraft: (d: string) => void;
-  targetCircle: string;
-  setTargetCircle: (c: string) => void;
-  paragraphReactions: Map<number, Map<string, ParagraphReaction>>;
-  setParagraphReactions: (p: Map<number, Map<string, ParagraphReaction>>) => void;
+
+  // Act 5 — 预演 (Rehearsal): roundtable + global prediction + quote hunter
   globalPrediction: GlobalPrediction | null;
   setGlobalPrediction: (p: GlobalPrediction | null) => void;
   quoteHunterResult: QuoteHunterResult | null;
   setQuoteHunterResult: (q: QuoteHunterResult | null) => void;
-
-  // Act 6 — 重审 (Review)
   editorRoundResult: EditorRoundResult | null;
   setEditorRoundResult: (r: EditorRoundResult | null) => void;
   roundtableSpeaking: string | null;
@@ -134,9 +129,8 @@ export const ACT_NAMES = [
   '择题',     // Act 2
   '寻位',     // Act 3
   '下笔',     // Act 4
-  '预演',     // Act 5
-  '重审',     // Act 6
-  '出酒',     // Act 7
+  '预演',     // Act 5 (was 重审)
+  '出酒',     // Act 6 (was 出酒/Act 7)
 ];
 
 export const ACT_AGENTS = [
@@ -145,9 +139,8 @@ export const ACT_AGENTS = [
   '望气者',                   // Act 2
   '测绘师 · 问难者',         // Act 3
   '执笔者',                   // Act 4
-  '众生席 · 六人预演',       // Act 5
-  '刘看山 · 圆桌会',         // Act 6
-  '刘看山',                   // Act 7
+  '刘看山 · 圆桌会',         // Act 5 (七人圆桌预演)
+  '刘看山',                   // Act 6 (出酒)
 ];
 
 // ─── Store Implementation ────────────────────────────────────────────────────
@@ -187,14 +180,12 @@ const initialState = {
   // Act 4
   skeleton: null,
 
-  // Act 5
+  // Act 4
   draft: '',
-  targetCircle: '',
-  paragraphReactions: new Map<number, Map<string, ParagraphReaction>>(),
+
+  // Act 5 (roundtable rehearsal)
   globalPrediction: null,
   quoteHunterResult: null,
-
-  // Act 6
   editorRoundResult: null,
   roundtableSpeaking: null,
 
@@ -257,14 +248,12 @@ export const useSymposiumStore = create<SymposiumState>((set) => ({
   // Act 4
   setSkeleton: (s) => set({ skeleton: s }),
 
-  // Act 5
+  // Act 4
   setDraft: (d) => set({ draft: d }),
-  setTargetCircle: (c) => set({ targetCircle: c }),
-  setParagraphReactions: (p) => set({ paragraphReactions: p }),
+
+  // Act 5 (roundtable rehearsal)
   setGlobalPrediction: (p) => set({ globalPrediction: p }),
   setQuoteHunterResult: (q) => set({ quoteHunterResult: q }),
-
-  // Act 6
   setEditorRoundResult: (r) => set({ editorRoundResult: r }),
   setRoundtableSpeaking: (s) => set({ roundtableSpeaking: s }),
 
