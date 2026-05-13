@@ -1,16 +1,16 @@
 /**
  * Act 5 — 预演 (Rehearsal)
  *
- * 长文阅读栏（600px）+ 右侧综合面板。
+ * 长文阅读栏 + 右侧综合面板。
  * 草稿按段落展示，每段背景按温度上色。
- * 弹幕锚点挂在每段右侧，hover 时展开弹幕卡片。
+ * 点击段落后在下方展开多视角观点列表（当前为 mock 数据）。
  */
 
 import { useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSymposiumStore } from '@/store/useSymposiumStore';
 import LoadingDots from '@/components/LoadingDots';
-import { callKimi } from '@/services/api';
+import { callLLM } from '@/services/api';
 import {
   LAOXUE_SYSTEM_PROMPT,
   GANGJING_SYSTEM_PROMPT,
@@ -33,6 +33,17 @@ const PERSONAS = [
   { key: 'kol', name: '业内观察', color: '#2E8B6F', prompt: KOL_SYSTEM_PROMPT },
   { key: 'liukanshan', name: '刘看山', color: '#0066FF', prompt: LIUKANSHAN_PARAGRAPH_PROMPT },
 ];
+
+// Mock perspectives for each paragraph (will be replaced by LLM output later)
+const MOCK_VIEWS: Record<string, string> = {
+  laoxue: '论据密度尚可，但缺少一个具体的出处或数据支撑。如果这里能引用一项研究或统计，说服力会显著增强。',
+  gangjing: '这一段有个隐含假设：读者默认认同你的前提。如果我不认同，整段都会失效。建议在这里先花一句建立共识。',
+  gongming: '读到中间那句的时候确实有触动，但结尾收得太急，情绪还没落地就被打断了。建议把最后一句展开半行。',
+  jinjie: '这一段缺乏「截图感」。没有一句能让人直接复制发朋友圈的句子。建议把核心观点压缩成一句带节奏的话。',
+  luren: '前三行没有钩子，差点划走。第四行才开始有意思。建议把第四行的核心信息搬到开头。',
+  kol: '这个话题在业内已经被讨论过很多轮了，你的切入角度和主流观点差异不够大。需要找到一个更尖锐的差异化立场。',
+  liukanshan: '作为编辑，我认为这一段的信息密度和情绪节奏是匹配的，但段落之间的过渡可以更自然一些。',
+};
 
 function getHeatColor(score: number): string {
   if (score >= 75) return '#D9B88E';
@@ -62,7 +73,7 @@ export default function Act5_Rehearsal() {
   const [isRehearsing, setIsRehearsing] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [rehearsalErrors, setRehearsalErrors] = useState<string[]>([]);
-  const [hoveredPara, setHoveredPara] = useState<number | null>(null);
+  const [expandedPara, setExpandedPara] = useState<number | null>(null);
 
   const paragraphs = useMemo(() => {
     return draft
@@ -88,7 +99,7 @@ export default function Act5_Rehearsal() {
       await Promise.all(
         PERSONAS.map(async (persona) => {
           try {
-            const res = await callKimi(
+            const res = await callLLM(
               [
                 { role: 'system', content: persona.prompt },
                 {
@@ -109,7 +120,6 @@ export default function Act5_Rehearsal() {
             const msg = e instanceof Error ? e.message : String(e);
             console.error(`[Act5] Persona ${persona.key} failed:`, msg);
             errors.push(`${persona.name}反应获取失败`);
-            // Do NOT set fallback data for this persona
           }
         })
       );
@@ -119,7 +129,7 @@ export default function Act5_Rehearsal() {
 
     // Global prediction
     try {
-      const gp = await callKimi(
+      const gp = await callLLM(
         [
           { role: 'system', content: GLOBAL_PREDICTION_PROMPT },
           { role: 'user', content: `[草稿全文]：\n${draft}` },
@@ -136,7 +146,7 @@ export default function Act5_Rehearsal() {
 
     // Quote hunter
     try {
-      const qh = await callKimi(
+      const qh = await callLLM(
         [
           { role: 'system', content: QUOTE_HUNTER_PROMPT },
           { role: 'user', content: `[草稿全文]：\n${draft}` },
@@ -168,7 +178,7 @@ export default function Act5_Rehearsal() {
 
   return (
     <div className="h-full flex flex-col lg:flex-row gap-6 px-6 py-6 overflow-hidden">
-      {/* Left — Draft with heatmap + paragraph danmaku */}
+      {/* Left — Draft with heatmap + paragraph perspectives */}
       <motion.div
         className="flex-1 flex flex-col max-w-prose-narrow overflow-hidden"
         initial={{ opacity: 0, x: -40 }}
@@ -185,29 +195,24 @@ export default function Act5_Rehearsal() {
         </div>
 
         <div className="flex-1 overflow-y-auto pr-2">
-          <div className="flex flex-col gap-8">
+          <div className="flex flex-col gap-6">
             {paragraphs.map((para, pid) => {
               const score = getParaScore(pid);
               const bg = getHeatColor(score);
               const leftBar = getLeftBarColor(score);
-              const reactions = paragraphReactions.get(pid);
-              const hasReactions = reactions && reactions.size > 0;
+              const isExpanded = expandedPara === pid;
 
               return (
-                <motion.div
-                  key={pid}
-                  className="relative"
-                  onMouseEnter={() => setHoveredPara(pid)}
-                  onMouseLeave={() => setHoveredPara(null)}
-                >
-                  {/* Paragraph container */}
+                <div key={pid} className="relative">
+                  {/* Paragraph container — clickable */}
                   <motion.div
-                    className="relative p-4 rounded transition-all"
+                    className="relative p-4 rounded cursor-pointer transition-all"
                     style={{
                       backgroundColor: bg,
                       borderLeft: `3px solid ${leftBar}`,
                     }}
-                    animate={{ x: hoveredPara === pid && showResults ? 4 : 0 }}
+                    onClick={() => setExpandedPara(isExpanded ? null : pid)}
+                    whileHover={{ x: 2 }}
                     transition={{ duration: 0.2 }}
                   >
                     <span
@@ -222,102 +227,93 @@ export default function Act5_Rehearsal() {
                     >
                       {para}
                     </p>
+
+                    {/* Score badge */}
+                    {showResults && (
+                      <div
+                        className="absolute top-2 right-2 px-2 py-0.5 rounded text-micro font-sans"
+                        style={{
+                          backgroundColor: 'rgba(255,255,255,0.7)',
+                          color: '#4A4641',
+                          border: '1px solid #E8E3D8',
+                        }}
+                      >
+                        留存 {score}%
+                      </div>
+                    )}
+
+                    {/* Expand hint */}
+                    {showResults && (
+                      <div
+                        className="mt-2 text-micro font-sans flex items-center gap-1"
+                        style={{ color: '#8A847C' }}
+                      >
+                        <span>{isExpanded ? '▾' : '▸'}</span>
+                        <span>{isExpanded ? '收起视角' : '点击展开多视角观点'}</span>
+                      </div>
+                    )}
                   </motion.div>
 
-                  {/* Danmaku anchor dots */}
-                  {showResults && hasReactions && (
-                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col gap-1">
-                      {PERSONAS.slice(0, 4).map((p) => {
-                        const r = reactions.get(p.key);
-                        if (!r) return null;
-                        return (
-                          <span
-                            key={p.key}
-                            className="text-xs leading-none"
-                            title={r.danmu}
-                          >
-                            {r.emoji}
-                          </span>
-                        );
-                      })}
-                      {reactions.size > 4 && (
-                        <span className="text-micro font-mono" style={{ color: '#8A847C' }}>
-                          +{reactions.size - 4}
-                        </span>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Expanded danmaku cards on hover */}
+                  {/* Expanded perspective list */}
                   <AnimatePresence>
-                    {hoveredPara === pid && showResults && hasReactions && (
+                    {isExpanded && showResults && (
                       <motion.div
-                        initial={{ opacity: 0, x: 20, scale: 0.95 }}
-                        animate={{ opacity: 1, x: 0, scale: 1 }}
-                        exit={{ opacity: 0, x: 20, scale: 0.95 }}
-                        transition={{
-                          type: 'spring',
-                          stiffness: 300,
-                          damping: 25,
-                        }}
-                        className="absolute left-full top-0 ml-3 z-20"
-                        style={{ width: 280 }}
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.3, ease: [0.22, 0.61, 0.36, 1] }}
+                        className="overflow-hidden"
                       >
                         <div
-                          className="rounded p-4"
+                          className="mt-3 rounded p-4"
                           style={{
                             backgroundColor: '#FFFFFF',
                             border: '1px solid #E8E3D8',
-                            boxShadow: '0 8px 32px rgba(28, 26, 24, 0.08)',
+                            boxShadow: '0 4px 16px rgba(28, 26, 24, 0.04)',
                           }}
                         >
-                          <div className="flex items-center justify-between mb-3 pb-2" style={{ borderBottom: '1px solid #E8E3D8' }}>
+                          <div
+                            className="flex items-center justify-between mb-3 pb-2"
+                            style={{ borderBottom: '1px solid #E8E3D8' }}
+                          >
                             <span className="text-caption font-sans font-medium" style={{ color: '#4A4641' }}>
-                              段{pid + 1} 读者反应
+                              段{pid + 1} · 多视角反应
                             </span>
-                            <span className="text-micro font-mono" style={{ color: '#8A847C' }}>
-                              留存 {score}%
+                            <span className="text-micro font-sans" style={{ color: '#8A847C' }}>
+                              {PERSONAS.length} 个视角
                             </span>
                           </div>
-                          <div className="flex flex-col gap-2">
+
+                          <div className="flex flex-col gap-2.5">
                             {PERSONAS.map((p) => {
-                              const r = reactions.get(p.key);
-                              if (!r) {
-                                return (
-                                  <div
-                                    key={p.key}
-                                    className="p-2 rounded"
-                                    style={{ backgroundColor: '#F4E8E6', border: '1px solid #E8E3D8' }}
-                                  >
-                                    <div className="flex items-center gap-2 mb-1">
-                                      <span className="text-xs">❌</span>
-                                      <span className="text-micro font-sans font-medium" style={{ color: '#A53A2C' }}>
-                                        {p.name}
-                                      </span>
-                                    </div>
-                                    <p className="text-caption font-serif" style={{ color: '#A53A2C' }}>
-                                      获取失败
-                                    </p>
-                                  </div>
-                                );
-                              }
+                              // Use mock views for now. Later these will come from LLM.
+                              const viewText = MOCK_VIEWS[p.key] ?? '暂无观点';
                               return (
                                 <div
                                   key={p.key}
-                                  className="p-2 rounded"
+                                  className="p-3 rounded"
                                   style={{
                                     backgroundColor: '#FBF9F3',
-                                    border: `1px solid ${p.color}30`,
+                                    border: `1px solid ${p.color}25`,
                                   }}
                                 >
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <span className="text-xs">{r.emoji}</span>
-                                    <span className="text-micro font-sans font-medium" style={{ color: p.color }}>
+                                  <div className="flex items-center gap-2 mb-1.5">
+                                    <span
+                                      className="w-2 h-2 rounded-full"
+                                      style={{ backgroundColor: p.color }}
+                                    />
+                                    <span
+                                      className="text-micro font-sans font-medium"
+                                      style={{ color: p.color }}
+                                    >
                                       {p.name}
                                     </span>
                                   </div>
-                                  <p className="text-caption font-serif" style={{ color: '#1C1A18' }}>
-                                    {r.danmu}
+                                  <p
+                                    className="text-caption font-serif"
+                                    style={{ color: '#1C1A18', lineHeight: 1.7 }}
+                                  >
+                                    {viewText}
                                   </p>
                                 </div>
                               );
@@ -327,7 +323,7 @@ export default function Act5_Rehearsal() {
                       </motion.div>
                     )}
                   </AnimatePresence>
-                </motion.div>
+                </div>
               );
             })}
           </div>

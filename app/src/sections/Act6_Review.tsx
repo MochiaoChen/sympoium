@@ -2,19 +2,16 @@
  * Act 6 — 重审 (Review)
  *
  * 圆桌布局。七位客人围坐椭圆。
- * 中心区是草稿缩略图，发言时高亮，发言卡片浮出。
- * 参考 mockup HTML 的视觉规格。
- *
- * 关键修复：用一个固定 aspect-ratio 的容器包裹圆桌，
- * 防止不同屏幕尺寸下的绝对定位错乱。
+ * 发言内容基于前序幕的真实数据动态生成，不再使用硬编码 mock。
  */
 
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSymposiumStore } from '@/store/useSymposiumStore';
-import { callKimi } from '@/services/api';
+import { callLLM } from '@/services/api';
 import { LIUKANSHAN_EDITOR_PROMPT } from '@/data/agentPrompts';
-import type { EditorRoundResult } from '@/services/api';
+import type { EditorRoundResult, GlobalPrediction, QuoteHunterResult } from '@/services/api';
+import type { Gap } from '@/store/useSymposiumStore';
 
 interface Speaker {
   key: string;
@@ -39,61 +36,136 @@ const SPEAKERS: Speaker[] = [
   { key: 'quotehunter', name: '金句猎人', role: '众生 / 金句采集', color: '#8B7355', colorSoft: 'rgba(139,115,85,0.12)', topPct: 78, leftPct: 24, activeTopPct: 76, activeLeftPct: 26, cardOrigin: 'left' },
 ];
 
-const SPEECH_CONTENT: Record<string, { body: string; tag: string; targetPara: string }> = {
-  host: {
-    body: `综合大家的意见，三条最关键的修改建议会在所有客人发言完毕后给出。目前来看，第三段的位置陈旧是最显眼的硬伤，代际信任崩塌这条主线需要在开头更早建立。结构层面，建议把砖房细节前置作为更具体的钩子。`,
-    tag: '主持发言中',
-    targetPara: 'para-2',
-  },
-  cartographer: {
-    body: `第三段实际上在重复答场里 5 个高赞答案都讲过的经济压力论，覆盖度 87%。读者觉得无聊不是文字问题，是位置陈旧。建议删除这一段，或者从代际信任的微观机制重写。`,
-    tag: '指向第三段',
-    targetPara: 'para-3',
-  },
-  critic: {
-    body: `第二段「更关键的是」这个连接词可以删掉，前一句已经做完了对比，连词反而稀释了节奏。另外「怀疑这套设定本身」过于抽象，可以改成「怀疑这套设定承诺的回报」，落到具体处。`,
-    tag: '指向第二段',
-    targetPara: 'para-2',
-  },
-  challenger: {
-    body: `代际信任崩塌这个角度站得住，但你必须回应一个明显的反对：如果是信任问题，那么家境优渥、父母关系稳定的年轻人应该更愿意结婚。事实数据并不支持这一点。这个反例在文中需要被显式处理。`,
-    tag: '指向第二段',
-    targetPara: 'para-2',
-  },
-  student: {
-    body: `砖房那个细节很真实。但我想要一个数据对照：上世纪八十年代的婚姻成本占家庭收入的多少比例，今天又是多少？没有这个对照，「成本超过收益」这句话就只是修辞。`,
-    tag: '指向第一、二段',
-    targetPara: 'para-1',
-  },
-  resonant: {
-    body: `这就是我一直想说但说不清楚的话。我父母结婚 30 多年了，不是我不想要他们那样的生活，是看到他们那样的生活之后突然明白那不是我想要的。第二段把这个感觉写出来了。`,
-    tag: '为第二段点亮',
-    targetPara: 'para-2',
-  },
-  quotehunter: {
-    body: `这一句可以做标题截图：「看到上一代用这套设定走完一生之后的真实状态，开始怀疑这套设定本身。」稍微改一下节奏会更好截图，比如断成两个短句。`,
-    tag: '挑出可截图金句',
-    targetPara: 'para-2',
-  },
-};
-
 const ORDER = ['host', 'cartographer', 'critic', 'challenger', 'student', 'resonant', 'quotehunter'];
+
+interface Speech {
+  body: string;
+  tag: string;
+  targetPara: string;
+}
+
+function getSpeakerSpeech(
+  key: string,
+  draft: string,
+  paragraphs: string[],
+  editorResult: EditorRoundResult | null,
+  selectedGap: Gap | null,
+  globalPrediction: GlobalPrediction | null,
+  quoteHunterResult: QuoteHunterResult | null,
+): Speech {
+  const fallback = (hint: string): Speech => ({
+    body: hint,
+    tag: '等待数据',
+    targetPara: 'para-0',
+  });
+
+  switch (key) {
+    case 'host': {
+      if (editorResult?.editor_note) {
+        return {
+          body: editorResult.editor_note,
+          tag: '主编综合',
+          targetPara: 'para-0',
+        };
+      }
+      return fallback('主编综合尚未生成。点击右下角「生成主编综合」后，刘看山会基于前六幕的数据给出综合意见。');
+    }
+    case 'cartographer': {
+      if (selectedGap) {
+        return {
+          body: `从答场测绘来看，我们选择的间隙是「${selectedGap.description}」。${selectedGap.reasoning} 这个位置的价值在于${selectedGap.audit_verdict === 'gold' ? '已经被验证为高潜力方向。' : '仍需要进一步论证。'}`,
+          tag: '答场定位',
+          targetPara: 'para-0',
+        };
+      }
+      return fallback('答场间隙尚未选定。请在第三幕完成测绘并选择一个间隙。');
+    }
+    case 'critic': {
+      const wordCount = draft.length;
+      const paraCount = paragraphs.length;
+      if (wordCount === 0) return fallback('草稿尚未输入。请在第四幕完成初稿。');
+      const avgLen = Math.round(wordCount / (paraCount || 1));
+      return {
+        body: `全文 ${wordCount} 字，${paraCount} 段，平均每段 ${avgLen} 字。${avgLen > 300 ? '段落偏长，建议拆分为更易读的短段。' : avgLen < 80 ? '段落偏短，节奏快但可能缺乏深度展开。' : '段落长度适中，阅读节奏良好。'}`,
+        tag: '结构审读',
+        targetPara: 'para-0',
+      };
+    }
+    case 'challenger': {
+      if (selectedGap?.strongest_objection) {
+        return {
+          body: `对当前间隙的核心反驳：${selectedGap.strongest_objection} ${selectedGap.defense_strategy ? '建议的应对策略是：' + selectedGap.defense_strategy : '目前尚未准备应对策略。'}`,
+          tag: '立场审判',
+          targetPara: 'para-0',
+        };
+      }
+      return fallback('立场审判需要先在第三幕选择间隙并完成问难者的审判。');
+    }
+    case 'student': {
+      if (globalPrediction) {
+        return {
+          body: `基于预演数据，全文点赞率预测 ${globalPrediction.like_rate}%，评论率 ${globalPrediction.comment_rate}%，划走率 ${globalPrediction.swipe_away_rate}%。${globalPrediction.first_three_lines_survival > 70 ? '前三行留存表现良好。' : '前三行需要加强钩子。'} ${globalPrediction.risk_points.length > 0 ? '存在 ' + globalPrediction.risk_points.length + ' 个风险点需要注意。' : '未发现明显风险点。'}`,
+          tag: '数据视角',
+          targetPara: 'para-0',
+        };
+      }
+      return fallback('预演数据尚未生成。请在第五幕完成预演。');
+    }
+    case 'resonant': {
+      if (quoteHunterResult && quoteHunterResult.quotes.length > 0) {
+        const q = quoteHunterResult.quotes[0];
+        return {
+          body: `这一句让我有共鸣：「${q.text}」。它的传播力评分是 ${q.viral_score} 分，标签为「${q.tag}」。读者很可能因为这句话而停下来。`,
+          tag: '情感共鸣',
+          targetPara: 'para-0',
+        };
+      }
+      return fallback('金句猎人尚未发现高传播力句子。请在第五幕完成预演。');
+    }
+    case 'quotehunter': {
+      if (quoteHunterResult && quoteHunterResult.quotes.length > 0) {
+        const total = quoteHunterResult.quotes.reduce((s, q) => s + q.viral_score, 0);
+        const avg = Math.round(total / quoteHunterResult.quotes.length);
+        return {
+          body: `本次共捕获 ${quoteHunterResult.quotes.length} 条候选金句，平均传播力 ${avg} 分。最高分的句子建议作为标题截图或开篇钩子使用。`,
+          tag: '金句汇总',
+          targetPara: 'para-0',
+        };
+      }
+      return fallback('金句库为空。请在第五幕完成预演，让金句猎人扫描全文。');
+    }
+    default:
+      return fallback('该角色尚未准备好发言。');
+  }
+}
 
 export default function Act6_Review() {
   const draft = useSymposiumStore((s) => s.draft);
   const paragraphReactions = useSymposiumStore((s) => s.paragraphReactions);
   const globalPrediction = useSymposiumStore((s) => s.globalPrediction);
   const quoteHunterResult = useSymposiumStore((s) => s.quoteHunterResult);
+  const selectedGap = useSymposiumStore((s) => s.selectedGap);
   const setEditorRoundResult = useSymposiumStore((s) => s.setEditorRoundResult);
 
-  const [currentIdx, setCurrentIdx] = useState(1); // start on cartographer
+  const [currentIdx, setCurrentIdx] = useState(1);
   const [isAutoPlaying, setIsAutoPlaying] = useState(false);
   const [editorResult, setEditorResult] = useState<EditorRoundResult | null>(null);
   const [editorError, setEditorError] = useState<string | null>(null);
 
   const currentKey = ORDER[currentIdx];
   const currentSpeaker = SPEAKERS.find((s) => s.key === currentKey)!;
-  const speech = SPEECH_CONTENT[currentKey];
+
+  const paragraphs = draft.split(/\n{2,}/).map((p) => p.trim()).filter((p) => p.length > 0);
+
+  const speech = getSpeakerSpeech(
+    currentKey,
+    draft,
+    paragraphs,
+    editorResult,
+    selectedGap,
+    globalPrediction,
+    quoteHunterResult
+  );
 
   // Auto-play sequence
   useEffect(() => {
@@ -116,7 +188,7 @@ export default function Act6_Review() {
 
       const prompt = `${LIUKANSHAN_EDITOR_PROMPT}\n\n[目标圈层]：泛知识圈\n\n[草稿全文]：\n${draft}\n\n[6位虚拟读者的段落级反应数组]：\n${JSON.stringify(allReactions)}\n\n[全文级综合预测]：\n${JSON.stringify(globalPrediction)}\n\n[金句猎人成果]：\n${JSON.stringify(quoteHunterResult)}`;
 
-      const res = await callKimi([
+      const res = await callLLM([
         { role: 'system', content: prompt },
         { role: 'user', content: '请主持圆桌并输出JSON。' },
       ]);
@@ -132,10 +204,8 @@ export default function Act6_Review() {
     }
   }, [draft, paragraphReactions, globalPrediction, quoteHunterResult, setEditorRoundResult]);
 
-  const paragraphs = draft.split(/\n{2,}/).map((p) => p.trim()).filter((p) => p.length > 0);
-
   return (
-    <div className="h-full flex flex-col px-6 py-4 overflow-hidden">
+    <div className="h-full flex flex-col px-6 py-4 overflow-y-auto">
       {/* Stage — fixed aspect ratio container to prevent layout breakage */}
       <div className="flex-1 flex items-center justify-center" style={{ minHeight: 0 }}>
         <div
@@ -301,7 +371,6 @@ export default function Act6_Review() {
                 zIndex: 5,
                 width: 320,
                 maxWidth: '75%',
-                // Position speech card near the speaker
                 top: `${currentSpeaker.topPct}%`,
                 left: `${currentSpeaker.leftPct}%`,
                 transform:

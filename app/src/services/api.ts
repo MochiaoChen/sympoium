@@ -10,9 +10,17 @@
 
 declare const __KIMI_API_KEY__: string;
 declare const __ZHIHU_ACCESS_SECRET__: string;
+declare const __DEEPSEEK_API_KEY__: string;
+declare const __ZHIHU_APP_ID__: string;
+declare const __ZHIHU_APP_KEY__: string;
+declare const __ZHIHU_REDIRECT_URI__: string;
 
 const KIMI_KEY = __KIMI_API_KEY__;
 const ZHIHU_SECRET = __ZHIHU_ACCESS_SECRET__;
+const DEEPSEEK_KEY = __DEEPSEEK_API_KEY__;
+const ZHIHU_APP_ID = __ZHIHU_APP_ID__;
+const ZHIHU_APP_KEY = __ZHIHU_APP_KEY__;
+const ZHIHU_REDIRECT_URI = __ZHIHU_REDIRECT_URI__;
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -107,6 +115,85 @@ export async function searchGlobal(query: string, count: number = 10): Promise<S
   return data.Data?.Items ?? [];
 }
 
+export type LLMProvider = 'kimi' | 'deepseek';
+
+// ─── DeepSeek API (via proxy) ───────────────────────────────────────────────
+
+const DEEPSEEK_BASE = '/api/deepseek';
+
+export async function callDeepSeek(
+  messages: { role: string; content: string }[],
+  temperature: number = 0.7
+): Promise<string> {
+  const res = await fetch(`${DEEPSEEK_BASE}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${DEEPSEEK_KEY}`,
+    },
+    body: JSON.stringify({
+      model: 'deepseek-chat',
+      messages,
+      temperature,
+    }),
+  });
+  if (!res.ok) throw new Error(`DeepSeek API error: ${res.status}`);
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content ?? '';
+}
+
+export async function callDeepSeekStream(
+  messages: { role: string; content: string }[],
+  onChunk: (chunk: string) => void,
+  temperature: number = 0.7
+): Promise<void> {
+  const res = await fetch(`${DEEPSEEK_BASE}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${DEEPSEEK_KEY}`,
+    },
+    body: JSON.stringify({
+      model: 'deepseek-chat',
+      messages,
+      temperature,
+      stream: true,
+    }),
+  });
+  if (!res.ok) throw new Error(`DeepSeek stream error: ${res.status}`);
+
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error('No response body');
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data:')) continue;
+        const jsonStr = trimmed.slice(5).trim();
+        if (jsonStr === '[DONE]') return;
+        try {
+          const json = JSON.parse(jsonStr);
+          const delta = json.choices?.[0]?.delta?.content;
+          if (delta) onChunk(delta);
+        } catch {
+          // ignore malformed JSON
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 // ─── Kimi API (via proxy) ───────────────────────────────────────────────────
 
 const KIMI_BASE = '/api/kimi';
@@ -182,4 +269,93 @@ export async function callKimiStream(
   } finally {
     reader.releaseLock();
   }
+}
+
+// ─── Zhihu OAuth ──────────────────────────────────────────────────────────────
+
+export interface ZhihuUser {
+  uid: number;
+  fullname: string;
+  gender: string;
+  headline: string;
+  description: string;
+  avatar_path: string;
+  phone_no: string;
+  email: string;
+}
+
+export function getZhihuAuthUrl(): string {
+  const params = new URLSearchParams({
+    redirect_uri: ZHIHU_REDIRECT_URI,
+    app_id: ZHIHU_APP_ID,
+    response_type: 'code',
+  });
+  return `https://openapi.zhihu.com/authorize?${params.toString()}`;
+}
+
+export async function exchangeCodeForToken(code: string): Promise<{ access_token: string; expires_in: number }> {
+  const res = await fetch('/api/zhihu-oauth/access_token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({
+      app_id: ZHIHU_APP_ID,
+      app_key: ZHIHU_APP_KEY,
+      grant_type: 'authorization_code',
+      redirect_uri: ZHIHU_REDIRECT_URI,
+      code,
+    }).toString(),
+  });
+  if (!res.ok) throw new Error(`OAuth token exchange failed: ${res.status}`);
+  const data = await res.json();
+  if (!data.access_token) throw new Error('OAuth response missing access_token');
+  return { access_token: data.access_token, expires_in: data.expires_in ?? 3600 };
+}
+
+export async function fetchZhihuUser(accessToken: string): Promise<ZhihuUser> {
+  const res = await fetch('/api/zhihu-oauth/user', {
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+    },
+  });
+  if (!res.ok) throw new Error(`Fetch user failed: ${res.status}`);
+  const data = await res.json();
+  // OAuth user endpoint returns the user object directly (not wrapped in Code/Message)
+  return data as ZhihuUser;
+}
+
+// ─── Unified LLM entrypoint ──────────────────────────────────────────────────
+
+export async function callLLM(
+  messages: { role: string; content: string }[],
+  temperature: number = 0.7,
+  provider?: LLMProvider
+): Promise<string> {
+  const p = provider ?? getDefaultProvider();
+  if (p === 'deepseek') {
+    return callDeepSeek(messages, temperature);
+  }
+  return callKimi(messages, temperature);
+}
+
+export async function callLLMStream(
+  messages: { role: string; content: string }[],
+  onChunk: (chunk: string) => void,
+  temperature: number = 0.7,
+  provider?: LLMProvider
+): Promise<void> {
+  const p = provider ?? getDefaultProvider();
+  if (p === 'deepseek') {
+    return callDeepSeekStream(messages, onChunk, temperature);
+  }
+  return callKimiStream(messages, onChunk, temperature);
+}
+
+function getDefaultProvider(): LLMProvider {
+  try {
+    const stored = localStorage.getItem('sympoium_llm_provider');
+    if (stored === 'kimi' || stored === 'deepseek') return stored;
+  } catch { /* ignore */ }
+  return 'deepseek';
 }

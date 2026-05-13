@@ -13,6 +13,8 @@ import type {
   GlobalPrediction,
   QuoteHunterResult,
   EditorRoundResult,
+  ZhihuUser,
+  LLMProvider,
 } from '@/services/api';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -86,6 +88,17 @@ interface SymposiumState {
   roundtableSpeaking: string | null;
   setRoundtableSpeaking: (s: string | null) => void;
 
+  // Auth
+  zhihuAccessToken: string | null;
+  zhihuUser: ZhihuUser | null;
+  setZhihuAccessToken: (token: string | null) => void;
+  setZhihuUser: (user: ZhihuUser | null) => void;
+  logout: () => void;
+
+  // LLM Provider
+  llmProvider: LLMProvider;
+  setLLMProvider: (p: LLMProvider) => void;
+
   // Loading states
   isLoading: boolean;
   loadingMessage: string;
@@ -121,6 +134,20 @@ export const ACT_AGENTS = [
 
 // ─── Store Implementation ────────────────────────────────────────────────────
 
+// Load persisted auth state
+function loadPersistedAuth() {
+  try {
+    const token = localStorage.getItem('sympoium_zhihu_token');
+    const userJson = localStorage.getItem('sympoium_zhihu_user');
+    const user = userJson ? (JSON.parse(userJson) as ZhihuUser) : null;
+    return { token, user };
+  } catch {
+    return { token: null, user: null };
+  }
+}
+
+const persistedAuth = loadPersistedAuth();
+
 const initialState = {
   currentAct: 1,
 
@@ -151,6 +178,19 @@ const initialState = {
   editorRoundResult: null,
   roundtableSpeaking: null,
 
+  // Auth
+  zhihuAccessToken: persistedAuth.token,
+  zhihuUser: persistedAuth.user,
+
+  // LLM Provider
+  llmProvider: (() => {
+    try {
+      const stored = localStorage.getItem('sympoium_llm_provider');
+      if (stored === 'kimi' || stored === 'deepseek') return stored;
+    } catch { /* ignore */ }
+    return 'deepseek' as LLMProvider;
+  })(),
+
   // Loading
   isLoading: false,
   loadingMessage: '',
@@ -161,6 +201,23 @@ export const useSymposiumStore = create<SymposiumState>((set) => ({
 
   // Navigation
   setCurrentAct: (act) => set({ currentAct: act }),
+
+  // Auth
+  setZhihuAccessToken: (token) => {
+    if (token) localStorage.setItem('sympoium_zhihu_token', token);
+    else localStorage.removeItem('sympoium_zhihu_token');
+    set({ zhihuAccessToken: token });
+  },
+  setZhihuUser: (user) => {
+    if (user) localStorage.setItem('sympoium_zhihu_user', JSON.stringify(user));
+    else localStorage.removeItem('sympoium_zhihu_user');
+    set({ zhihuUser: user });
+  },
+  logout: () => {
+    localStorage.removeItem('sympoium_zhihu_token');
+    localStorage.removeItem('sympoium_zhihu_user');
+    set({ zhihuAccessToken: null, zhihuUser: null });
+  },
 
   // Act 1
   setHotList: (list) => set({ hotList: list }),
@@ -189,10 +246,25 @@ export const useSymposiumStore = create<SymposiumState>((set) => ({
   setEditorRoundResult: (r) => set({ editorRoundResult: r }),
   setRoundtableSpeaking: (s) => set({ roundtableSpeaking: s }),
 
+  // LLM Provider
+  setLLMProvider: (p) => {
+    localStorage.setItem('sympoium_llm_provider', p);
+    set({ llmProvider: p });
+  },
+
   // Loading
   setIsLoading: (loading, message = '') =>
     set({ isLoading: loading, loadingMessage: message }),
 
   // Reset
-  resetAll: () => set({ ...initialState }),
+  resetAll: () => {
+    // Preserve auth and provider across reset
+    const { zhihuAccessToken, zhihuUser, llmProvider } = useSymposiumStore.getState();
+    set({
+      ...initialState,
+      zhihuAccessToken,
+      zhihuUser,
+      llmProvider,
+    });
+  },
 }));

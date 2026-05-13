@@ -11,7 +11,7 @@ import { motion } from 'framer-motion';
 import { useSymposiumStore } from '@/store/useSymposiumStore';
 import AgentBadge from '@/components/AgentBadge';
 import LoadingDots from '@/components/LoadingDots';
-import { callKimi } from '@/services/api';
+import { callLLM } from '@/services/api';
 import { SKELETON_GENERATION_PROMPT } from '@/data/agentPrompts';
 
 export default function Act4_Draft() {
@@ -30,7 +30,7 @@ export default function Act4_Draft() {
     setError(null);
     try {
       const prompt = `${SKELETON_GENERATION_PROMPT}\n\n写作角度：${selectedGap.description}\n推理：${selectedGap.reasoning}`;
-      const res = await callKimi([
+      const res = await callLLM([
         { role: 'system', content: prompt },
         { role: 'user', content: '请生成写作骨架，输出JSON。' },
       ]);

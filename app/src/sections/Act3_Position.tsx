@@ -15,7 +15,7 @@ import { useSymposiumStore } from '@/store/useSymposiumStore';
 import type { Gap } from '@/store/useSymposiumStore';
 import AgentBadge from '@/components/AgentBadge';
 import LoadingDots from '@/components/LoadingDots';
-import { callKimi, searchZhihu } from '@/services/api';
+import { callLLM, searchZhihu } from '@/services/api';
 import { CEHUI_SYSTEM_PROMPT, WENNAN_SYSTEM_PROMPT } from '@/data/agentPrompts';
 
 // NOTE: All mock/fallback data removed. If APIs fail, we show the error
@@ -95,7 +95,7 @@ export default function Act3_Position() {
     let parsedGaps: Gap[] = [];
     try {
       const prompt = `${CEHUI_SYSTEM_PROMPT}\n\n问题：${selectedQuestion?.title ?? ''}\n\n已有高赞回答：\n${realAnswers.map((a, i) => `${i + 1}. ${a.Title}：${a.ContentText ?? '（无摘要）'}`).join('\n')}`;
-      const res = await callKimi([
+      const res = await callLLM([
         { role: 'system', content: prompt },
         { role: 'user', content: '请分析答场，输出JSON。' },
       ]);
@@ -125,7 +125,7 @@ export default function Act3_Position() {
     setActiveAudit(gap.id);
     try {
       const prompt = `${WENNAN_SYSTEM_PROMPT}\n\n待审判的角度：${gap.description}\n推理：${gap.reasoning}`;
-      const res = await callKimi([
+      const res = await callLLM([
         { role: 'system', content: prompt },
         { role: 'user', content: '请审判这个角度，输出JSON。' },
       ]);

@@ -7,7 +7,112 @@
 
 import { useCallback } from 'react';
 import { motion } from 'framer-motion';
+import { LogIn } from 'lucide-react';
 import { useSymposiumStore, ACT_NAMES } from '@/store/useSymposiumStore';
+import { getZhihuAuthUrl } from '@/services/api';
+
+function ProviderSwitch() {
+  const llmProvider = useSymposiumStore((s) => s.llmProvider);
+  const setLLMProvider = useSymposiumStore((s) => s.setLLMProvider);
+
+  return (
+    <div className="flex items-center gap-1 text-micro font-sans" style={{ color: '#8A847C' }}>
+      <span>模型:</span>
+      <button
+        onClick={() => setLLMProvider('deepseek')}
+        className="px-1.5 py-0.5 rounded transition-colors"
+        style={{
+          backgroundColor: llmProvider === 'deepseek' ? 'rgba(93,42,44,0.1)' : 'transparent',
+          color: llmProvider === 'deepseek' ? '#5D2A2C' : '#B8B1A5',
+          fontWeight: llmProvider === 'deepseek' ? 500 : 400,
+        }}
+      >
+        DeepSeek
+      </button>
+      <span style={{ color: '#E8E3D8' }}>|</span>
+      <button
+        onClick={() => setLLMProvider('kimi')}
+        className="px-1.5 py-0.5 rounded transition-colors"
+        style={{
+          backgroundColor: llmProvider === 'kimi' ? 'rgba(93,42,44,0.1)' : 'transparent',
+          color: llmProvider === 'kimi' ? '#5D2A2C' : '#B8B1A5',
+          fontWeight: llmProvider === 'kimi' ? 500 : 400,
+        }}
+      >
+        Kimi
+      </button>
+    </div>
+  );
+}
+
+function UserArea() {
+  const zhihuUser = useSymposiumStore((s) => s.zhihuUser);
+  const logout = useSymposiumStore((s) => s.logout);
+
+  if (zhihuUser) {
+    return (
+      <div className="flex items-center gap-4">
+        <ProviderSwitch />
+        <div className="flex items-center gap-3 text-caption font-sans" style={{ color: '#8A847C' }}>
+          <span>{zhihuUser.fullname}</span>
+          {zhihuUser.avatar_path ? (
+            <img
+              src={zhihuUser.avatar_path}
+              alt={zhihuUser.fullname}
+              className="w-7 h-7 rounded-full object-cover"
+              style={{ border: '1px solid #E8E3D8' }}
+            />
+          ) : (
+            <div
+              className="w-7 h-7 rounded-full grid place-items-center text-micro font-serif font-medium"
+              style={{
+                backgroundColor: '#FBF9F3',
+                border: '1px solid #E8E3D8',
+                color: '#4A4641',
+              }}
+            >
+              {zhihuUser.fullname.charAt(0)}
+            </div>
+          )}
+          <button
+            onClick={logout}
+            className="text-micro underline"
+            style={{ color: '#B8B1A5' }}
+          >
+            退出
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const authUrl = getZhihuAuthUrl();
+  const isAuthUrlValid = authUrl.includes('app_id=') && !authUrl.includes('app_id=&');
+
+  return (
+    <div className="flex items-center gap-4">
+      <ProviderSwitch />
+      {isAuthUrlValid ? (
+        <a
+          href={authUrl}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded text-ui font-sans font-medium transition-transform hover:scale-[1.02] active:scale-[0.98]"
+          style={{
+            backgroundColor: '#5D2A2C',
+            color: '#FFFFFF',
+            letterSpacing: '0.05em',
+          }}
+        >
+          <LogIn size={14} />
+          知乎登录
+        </a>
+      ) : (
+        <span className="text-micro font-sans" style={{ color: '#A53A2C' }}>
+          OAuth 配置缺失
+        </span>
+      )}
+    </div>
+  );
+}
 
 export default function Navbar() {
   const currentAct = useSymposiumStore((s) => s.currentAct);
@@ -48,19 +153,7 @@ export default function Navbar() {
         </div>
 
         {/* User area */}
-        <div className="flex items-center gap-3 text-caption font-sans" style={{ color: '#8A847C' }}>
-          <span>Mochiao</span>
-          <div
-            className="w-7 h-7 rounded-full grid place-items-center text-micro font-serif font-medium"
-            style={{
-              backgroundColor: '#FBF9F3',
-              border: '1px solid #E8E3D8',
-              color: '#4A4641',
-            }}
-          >
-            M
-          </div>
-        </div>
+        <UserArea />
       </div>
 
       {/* Timeline */}
