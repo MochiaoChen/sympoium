@@ -8,17 +8,24 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSymposiumStore } from '@/store/useSymposiumStore';
-import { callLLM } from '@/services/api';
+import { callLLM, callLLMJson } from '@/services/api';
 import {
   LIUKANSHAN_EDITOR_PROMPT,
   GLOBAL_PREDICTION_PROMPT,
   QUOTE_HUNTER_PROMPT,
+  SCHOLAR_SYSTEM_PROMPT,
+  TROLL_SYSTEM_PROMPT,
+  EMPATH_SYSTEM_PROMPT,
+  QUOTER_SYSTEM_PROMPT,
+  SWIPER_SYSTEM_PROMPT,
+  KOL_SYSTEM_PROMPT,
+  buildPersonaUserPrompt,
+  type PersonaReaction,
 } from '@/data/agentPrompts';
 import type { EditorRoundResult, GlobalPrediction, QuoteHunterResult } from '@/services/api';
-import type { Gap } from '@/store/useSymposiumStore';
 
 interface Speaker {
-  key: string;
+  key: PersonaKey;
   name: string;
   role: string;
   color: string;
@@ -30,147 +37,78 @@ interface Speaker {
   cardOrigin: string;
 }
 
+type PersonaKey = 'host' | 'scholar' | 'troll' | 'empath' | 'quoter' | 'swiper' | 'kol';
+
 const SPEAKERS: Speaker[] = [
-  { key: 'host', name: '刘看山', role: '主编', color: '#0066FF', colorSoft: 'rgba(0,102,255,0.1)', topPct: 8, leftPct: 50, activeTopPct: 10, activeLeftPct: 50, cardOrigin: 'top' },
-  { key: 'cartographer', name: '测绘师', role: '答场分析', color: '#3D5C42', colorSoft: 'rgba(61,92,66,0.12)', topPct: 22, leftPct: 22, activeTopPct: 24, activeLeftPct: 24, cardOrigin: 'left' },
-  { key: 'critic', name: '校雠', role: '文字精校', color: '#8B6B3A', colorSoft: 'rgba(139,107,58,0.12)', topPct: 22, leftPct: 78, activeTopPct: 24, activeLeftPct: 76, cardOrigin: 'right' },
-  { key: 'challenger', name: '问难者', role: '立场审判', color: '#A53A2C', colorSoft: 'rgba(165,58,44,0.12)', topPct: 50, leftPct: 10, activeTopPct: 50, activeLeftPct: 12, cardOrigin: 'left' },
-  { key: 'student', name: '学霸型', role: '众生 / 科技理性', color: '#1F3A5F', colorSoft: 'rgba(31,58,95,0.12)', topPct: 50, leftPct: 90, activeTopPct: 50, activeLeftPct: 88, cardOrigin: 'right' },
-  { key: 'resonant', name: '共鸣型', role: '众生 / 情感共鸣', color: '#8B5A6B', colorSoft: 'rgba(139,90,107,0.12)', topPct: 78, leftPct: 76, activeTopPct: 76, activeLeftPct: 74, cardOrigin: 'right' },
-  { key: 'quotehunter', name: '金句猎人', role: '众生 / 金句采集', color: '#8B7355', colorSoft: 'rgba(139,115,85,0.12)', topPct: 78, leftPct: 24, activeTopPct: 76, activeLeftPct: 26, cardOrigin: 'left' },
+  { key: 'host',    name: '刘看山',       role: '主编',         color: '#1AAEE8', colorSoft: 'rgba(26,174,232,0.12)', topPct: 8,  leftPct: 50, activeTopPct: 10, activeLeftPct: 50, cardOrigin: 'top' },
+  { key: 'scholar', name: '考据组',       role: '学院派挑刺',   color: '#4A6FA5', colorSoft: 'rgba(74,111,165,0.12)',  topPct: 22, leftPct: 22, activeTopPct: 24, activeLeftPct: 24, cardOrigin: 'left' },
+  { key: 'troll',   name: '抬杠侠',       role: '专业反对',     color: '#C13B3B', colorSoft: 'rgba(193,59,59,0.12)',   topPct: 22, leftPct: 78, activeTopPct: 24, activeLeftPct: 76, cardOrigin: 'right' },
+  { key: 'kol',     name: '业内观察',     role: 'KOL 视角',     color: '#2E8B6F', colorSoft: 'rgba(46,139,111,0.12)',  topPct: 50, leftPct: 10, activeTopPct: 50, activeLeftPct: 12, cardOrigin: 'left' },
+  { key: 'swiper',  name: '划走预备役',   role: '注意力警报',   color: '#888888', colorSoft: 'rgba(136,136,136,0.12)', topPct: 50, leftPct: 90, activeTopPct: 50, activeLeftPct: 88, cardOrigin: 'right' },
+  { key: 'empath',  name: '破防选手',     role: '情绪共鸣',     color: '#E36AAB', colorSoft: 'rgba(227,106,171,0.12)', topPct: 78, leftPct: 76, activeTopPct: 76, activeLeftPct: 74, cardOrigin: 'right' },
+  { key: 'quoter',  name: '截图怪',       role: '金句嗅探',     color: '#F0B62F', colorSoft: 'rgba(240,182,47,0.12)',  topPct: 78, leftPct: 24, activeTopPct: 76, activeLeftPct: 26, cardOrigin: 'left' },
 ];
 
-const ORDER = ['host', 'cartographer', 'critic', 'challenger', 'student', 'resonant', 'quotehunter'];
+const ORDER: PersonaKey[] = ['host', 'scholar', 'troll', 'kol', 'swiper', 'empath', 'quoter'];
+
+const READER_PROMPTS: Record<Exclude<PersonaKey, 'host'>, string> = {
+  scholar: SCHOLAR_SYSTEM_PROMPT,
+  troll: TROLL_SYSTEM_PROMPT,
+  empath: EMPATH_SYSTEM_PROMPT,
+  quoter: QUOTER_SYSTEM_PROMPT,
+  swiper: SWIPER_SYSTEM_PROMPT,
+  kol: KOL_SYSTEM_PROMPT,
+};
 
 interface Speech {
   body: string;
   tag: string;
-  targetPara: string;
+  highlight: string | null;
 }
 
 function getSpeakerSpeech(
-  key: string,
-  draft: string,
-  paragraphs: string[],
+  key: PersonaKey,
   editorResult: EditorRoundResult | null,
-  selectedGap: Gap | null,
-  globalPrediction: GlobalPrediction | null,
-  quoteHunterResult: QuoteHunterResult | null,
+  personaReactions: Partial<Record<PersonaKey, PersonaReaction>>,
 ): Speech {
-  const fallback = (hint: string): Speech => ({
-    body: hint,
-    tag: '等待数据',
-    targetPara: 'para-0',
-  });
-
-  switch (key) {
-    case 'host': {
-      if (editorResult?.editor_note) {
-        return {
-          body: editorResult.editor_note,
-          tag: '主编综合',
-          targetPara: 'para-0',
-        };
-      }
-      return fallback('主编综合尚未生成。点击右下角「生成主编综合」后，刘看山会基于前六幕的数据给出综合意见。');
+  if (key === 'host') {
+    if (editorResult?.editor_note) {
+      return { body: editorResult.editor_note, tag: '主编综合', highlight: null };
     }
-    case 'cartographer': {
-      if (selectedGap) {
-        return {
-          body: `从答场测绘来看，我们选择的间隙是「${selectedGap.description}」。${selectedGap.reasoning} 这个位置的价值在于${selectedGap.audit_verdict === 'gold' ? '已经被验证为高潜力方向。' : '仍需要进一步论证。'}`,
-          tag: '答场定位',
-          targetPara: 'para-0',
-        };
-      }
-      return fallback('答场间隙尚未选定。请在第三幕完成测绘并选择一个间隙。');
-    }
-    case 'critic': {
-      const wordCount = draft.length;
-      const paraCount = paragraphs.length;
-      if (wordCount === 0) return fallback('草稿尚未输入。请在第四幕完成初稿。');
-      const avgLen = Math.round(wordCount / (paraCount || 1));
-      return {
-        body: `全文 ${wordCount} 字，${paraCount} 段，平均每段 ${avgLen} 字。${avgLen > 300 ? '段落偏长，建议拆分为更易读的短段。' : avgLen < 80 ? '段落偏短，节奏快但可能缺乏深度展开。' : '段落长度适中，阅读节奏良好。'}`,
-        tag: '结构审读',
-        targetPara: 'para-0',
-      };
-    }
-    case 'challenger': {
-      if (selectedGap?.strongest_objection) {
-        return {
-          body: `对当前间隙的核心反驳：${selectedGap.strongest_objection} ${selectedGap.defense_strategy ? '建议的应对策略是：' + selectedGap.defense_strategy : '目前尚未准备应对策略。'}`,
-          tag: '立场审判',
-          targetPara: 'para-0',
-        };
-      }
-      return fallback('立场审判需要先在第三幕选择间隙并完成问难者的审判。');
-    }
-    case 'student': {
-      if (globalPrediction) {
-        return {
-          body: `基于预演数据，全文点赞率预测 ${globalPrediction.like_rate}%，评论率 ${globalPrediction.comment_rate}%，划走率 ${globalPrediction.swipe_away_rate}%。${globalPrediction.first_three_lines_survival > 70 ? '前三行留存表现良好。' : '前三行需要加强钩子。'} ${globalPrediction.risk_points.length > 0 ? '存在 ' + globalPrediction.risk_points.length + ' 个风险点需要注意。' : '未发现明显风险点。'}`,
-          tag: '数据视角',
-          targetPara: 'para-0',
-        };
-      }
-      return fallback('预演数据尚未生成。请在第五幕完成预演。');
-    }
-    case 'resonant': {
-      if (quoteHunterResult && quoteHunterResult.quotes.length > 0) {
-        const q = quoteHunterResult.quotes[0];
-        return {
-          body: `这一句让我有共鸣：「${q.text}」。它的传播力评分是 ${q.viral_score} 分，标签为「${q.tag}」。读者很可能因为这句话而停下来。`,
-          tag: '情感共鸣',
-          targetPara: 'para-0',
-        };
-      }
-      return fallback('金句猎人尚未发现高传播力句子。请在第五幕完成预演。');
-    }
-    case 'quotehunter': {
-      if (quoteHunterResult && quoteHunterResult.quotes.length > 0) {
-        const total = quoteHunterResult.quotes.reduce((s, q) => s + q.viral_score, 0);
-        const avg = Math.round(total / quoteHunterResult.quotes.length);
-        return {
-          body: `本次共捕获 ${quoteHunterResult.quotes.length} 条候选金句，平均传播力 ${avg} 分。最高分的句子建议作为标题截图或开篇钩子使用。`,
-          tag: '金句汇总',
-          targetPara: 'para-0',
-        };
-      }
-      return fallback('金句库为空。请在第五幕完成预演，让金句猎人扫描全文。');
-    }
-    default:
-      return fallback('该角色尚未准备好发言。');
+    return {
+      body: '主编综合尚未生成。点击右下角「开始预演」后，七位读者会先各自读完，刘看山会基于所有反馈给出综合意见。',
+      tag: '等待数据',
+      highlight: null,
+    };
   }
+
+  const reaction = personaReactions[key];
+  if (reaction) {
+    const meta = `${reaction.emoji ?? ''} 留存 ${reaction.continue_prob}%`.trim();
+    return { body: reaction.comment, tag: meta, highlight: reaction.highlight_phrase };
+  }
+  return { body: '正在读这一稿…', tag: '等待数据', highlight: null };
 }
 
 export default function Act5_Rehearsal() {
   const draft = useSymposiumStore((s) => s.draft);
-  const globalPrediction = useSymposiumStore((s) => s.globalPrediction);
-  const quoteHunterResult = useSymposiumStore((s) => s.quoteHunterResult);
-  const selectedGap = useSymposiumStore((s) => s.selectedGap);
   const setEditorRoundResult = useSymposiumStore((s) => s.setEditorRoundResult);
   const setGlobalPrediction = useSymposiumStore((s) => s.setGlobalPrediction);
   const setQuoteHunterResult = useSymposiumStore((s) => s.setQuoteHunterResult);
 
-  const [currentIdx, setCurrentIdx] = useState(1);
+  const [currentIdx, setCurrentIdx] = useState(0);
   const [isAutoPlaying, setIsAutoPlaying] = useState(false);
   const [editorResult, setEditorResult] = useState<EditorRoundResult | null>(null);
   const [editorError, setEditorError] = useState<string | null>(null);
+  const [personaReactions, setPersonaReactions] = useState<Partial<Record<PersonaKey, PersonaReaction>>>({});
+  const [isRehearsing, setIsRehearsing] = useState(false);
 
   const currentKey = ORDER[currentIdx];
   const currentSpeaker = SPEAKERS.find((s) => s.key === currentKey)!;
 
   const paragraphs = draft.split(/\n{2,}/).map((p) => p.trim()).filter((p) => p.length > 0);
 
-  const speech = getSpeakerSpeech(
-    currentKey,
-    draft,
-    paragraphs,
-    editorResult,
-    selectedGap,
-    globalPrediction,
-    quoteHunterResult
-  );
+  const speech = getSpeakerSpeech(currentKey, editorResult, personaReactions);
 
   // Auto-play sequence
   useEffect(() => {
@@ -188,29 +126,60 @@ export default function Act5_Rehearsal() {
       return;
     }
 
-    // Run the three independent generations in parallel so the seven speakers
-    // populate together rather than in three serial waves.
-    const [predictionRes, quotesRes] = await Promise.allSettled([
-      callLLM(
+    setIsRehearsing(true);
+    setPersonaReactions({});
+    setEditorResult(null);
+
+    // Phase 1: parallel fan-out — 6 reader personas + global prediction + quote hunter
+    const readerKeys = Object.keys(READER_PROMPTS) as (keyof typeof READER_PROMPTS)[];
+    const userMsg = buildPersonaUserPrompt('泛知识圈', draft);
+
+    const readerTasks = readerKeys.map((k) =>
+      callLLMJson<PersonaReaction>(
         [
-          { role: 'system', content: GLOBAL_PREDICTION_PROMPT },
-          { role: 'user', content: `[草稿全文]：\n${draft}` },
+          { role: 'system', content: READER_PROMPTS[k] },
+          { role: 'user', content: userMsg },
         ],
-        0.3,
-      ),
-      callLLM(
-        [
-          { role: 'system', content: QUOTE_HUNTER_PROMPT },
-          { role: 'user', content: `[草稿全文]：\n${draft}` },
-        ],
-        0.6,
-      ),
+        0.85,
+      )
+        .then((r) => ({ key: k, ok: true as const, reaction: r }))
+        .catch((e) => ({ key: k, ok: false as const, error: e instanceof Error ? e.message : String(e) })),
+    );
+    const predictionTask = callLLM(
+      [
+        { role: 'system', content: GLOBAL_PREDICTION_PROMPT },
+        { role: 'user', content: `[草稿全文]：\n${draft}` },
+      ],
+      0.3,
+    );
+    const quotesTask = callLLM(
+      [
+        { role: 'system', content: QUOTE_HUNTER_PROMPT },
+        { role: 'user', content: `[草稿全文]：\n${draft}` },
+      ],
+      0.6,
+    );
+
+    const [readerResults, predictionRes, quotesRes] = await Promise.all([
+      Promise.all(readerTasks),
+      predictionTask.catch((e) => ({ __error: e instanceof Error ? e.message : String(e) })),
+      quotesTask.catch((e) => ({ __error: e instanceof Error ? e.message : String(e) })),
     ]);
 
+    const collected: Partial<Record<PersonaKey, PersonaReaction>> = {};
+    for (const r of readerResults) {
+      if (r.ok) {
+        collected[r.key] = r.reaction;
+      } else {
+        console.error(`[Act5] Persona ${r.key} failed:`, r.error);
+      }
+    }
+    setPersonaReactions(collected);
+
     let prediction: GlobalPrediction | null = null;
-    if (predictionRes.status === 'fulfilled') {
+    if (typeof predictionRes === 'string') {
       try {
-        prediction = JSON.parse(predictionRes.value);
+        prediction = JSON.parse(predictionRes);
         setGlobalPrediction(prediction);
       } catch (e) {
         console.error('[Act5] Global prediction parse failed:', e);
@@ -218,17 +187,21 @@ export default function Act5_Rehearsal() {
     }
 
     let quotes: QuoteHunterResult | null = null;
-    if (quotesRes.status === 'fulfilled') {
+    if (typeof quotesRes === 'string') {
       try {
-        quotes = JSON.parse(quotesRes.value);
+        quotes = JSON.parse(quotesRes);
         setQuoteHunterResult(quotes);
       } catch (e) {
         console.error('[Act5] Quote hunter parse failed:', e);
       }
     }
 
+    // Phase 2: editor synthesis — uses all reader reactions + global pred + quotes
     try {
-      const prompt = `${LIUKANSHAN_EDITOR_PROMPT}\n\n[草稿全文]：\n${draft}\n\n[全文级综合预测]：\n${JSON.stringify(prediction)}\n\n[金句猎人成果]：\n${JSON.stringify(quotes)}`;
+      const reactionsForEditor = Object.fromEntries(
+        Object.entries(collected).map(([k, r]) => [k, r]),
+      );
+      const prompt = `${LIUKANSHAN_EDITOR_PROMPT}\n\n[草稿全文]：\n${draft}\n\n[6 位虚拟读者的整体反应]：\n${JSON.stringify(reactionsForEditor, null, 2)}\n\n[全文级综合预测]：\n${JSON.stringify(prediction)}\n\n[金句猎人成果]：\n${JSON.stringify(quotes)}`;
       const res = await callLLM([
         { role: 'system', content: prompt },
         { role: 'user', content: '请主持圆桌并输出JSON。' },
@@ -242,6 +215,8 @@ export default function Act5_Rehearsal() {
       setEditorError(`主编圆桌获取失败：${msg}`);
       setEditorResult(null);
       setEditorRoundResult(null);
+    } finally {
+      setIsRehearsing(false);
     }
   }, [draft, setEditorRoundResult, setGlobalPrediction, setQuoteHunterResult]);
 
@@ -560,16 +535,18 @@ export default function Act5_Rehearsal() {
                 </span>
               )}
               <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
+                whileHover={isRehearsing ? {} : { scale: 1.02 }}
+                whileTap={isRehearsing ? {} : { scale: 0.98 }}
                 onClick={handleFetchEditorRound}
+                disabled={isRehearsing}
                 className="px-6 py-2.5 rounded text-white font-sans font-medium text-ui transition-all"
                 style={{
-                  backgroundColor: '#5D2A2C',
+                  backgroundColor: isRehearsing ? 'rgba(93,42,44,0.55)' : '#5D2A2C',
                   letterSpacing: '0.05em',
+                  cursor: isRehearsing ? 'wait' : 'pointer',
                 }}
               >
-                生成主编综合
+                {isRehearsing ? '预演中…(七位读者通读中)' : '开始预演'}
               </motion.button>
             </div>
           )}
