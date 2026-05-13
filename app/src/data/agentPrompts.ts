@@ -47,7 +47,7 @@ export function buildCehuiUserPrompt(
   }));
 
   return `问题：「${questionTitle}」
-现有回答数：${trimmed.length}
+现有回答数：${trimmed.length}（数组下标从 0 开始）
 
 回答摘要列表（JSON）：
 ${JSON.stringify(trimmed, null, 2)}
@@ -59,7 +59,8 @@ ${JSON.stringify(trimmed, null, 2)}
     {
       "cluster_id": "c1",
       "label": "15字以内的核心立场",
-      "answer_count": 12,
+      "answer_count": 4,
+      "member_indices": [0, 2, 5, 7],
       "total_upvotes": 3456,
       "representative_summary": "50字以内的代表性论述",
       "dimension": "viewpoint",
@@ -91,6 +92,10 @@ ${JSON.stringify(trimmed, null, 2)}
 - x / y 是 0–100 的坐标，让语义相近的项靠近、语义对立的远离
 - potential_value 1–5（5=金，3=可写但需打磨，1=死路）
 - saturation_level 只能取：low | medium | high
+- member_indices 必填：这个簇包含哪几条回答（用回答列表的下标 0..${trimmed.length - 1}）
+  · answer_count 必须等于 member_indices.length
+  · 每条回答必须且只能出现在一个 cluster 的 member_indices 里
+  · 所有 cluster 的 member_indices 加起来要覆盖 0..${trimmed.length - 1}
 
 聚类规则：
 - 5 个说同一件事的回答合并为 1 个簇

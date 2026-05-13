@@ -10,7 +10,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as d3 from 'd3';
-import type { Cluster, TerrainResult, TerrainDimension } from '@/services/api';
+import type { Cluster, SearchItem, TerrainResult, TerrainDimension } from '@/services/api';
 import { useSymposiumStore } from '@/store/useSymposiumStore';
 import type { Gap } from '@/store/useSymposiumStore';
 import AgentBadge from '@/components/AgentBadge';
@@ -20,23 +20,34 @@ import { CEHUI_SYSTEM_PROMPT, buildCehuiUserPrompt, WENNAN_SYSTEM_PROMPT } from 
 
 // All mock/fallback data removed. If APIs fail, surface the error.
 
-interface StarNode extends d3.SimulationNodeDatum {
+// Per-answer node (Obsidian-style): every Zhihu answer becomes its own small
+// dot; edges connect answers in the same cluster.
+interface GraphNode extends d3.SimulationNodeDatum {
   id: string;
-  label: string;
-  type: 'spoken' | 'unspoken';
-  r: number;
-  color: string;
-  // For spoken: clusters carry answer_count + total_upvotes for tooltip.
-  answerCount?: number;
+  type: 'answer' | 'gap';
+  // ── answer-node fields ──
+  answerIdx?: number;        // index into topAnswers
+  title?: string;
   upvotes?: number;
-  dimension?: TerrainDimension;
-  // For unspoken: potential_value drives the verdict badge.
-  potentialValue?: number;
+  authorName?: string;
+  clusterId?: string;        // which cluster this answer belongs to
+  // ── gap-node fields ──
+  gapId?: string;
   description?: string;
   suggestedBackground?: string;
-  // 0..100 grid coords from the LLM, mapped to SVG coords before simulation.
+  potentialValue?: number;
+  // ── shared visuals ──
+  r: number;
+  color: string;
+  dimension?: TerrainDimension;
+  // Anchor for forceX/Y (0..1 ratio of the viewport).
   initX?: number;
   initY?: number;
+}
+
+interface GraphLink extends d3.SimulationLinkDatum<GraphNode> {
+  source: string | GraphNode;
+  target: string | GraphNode;
 }
 
 type AnalysisPhase = 'idle' | 'fetching' | 'done' | 'error';
@@ -75,20 +86,22 @@ export default function Act3_Position() {
 
   const [phase, setPhase] = useState<AnalysisPhase>('idle');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [topAnswers, setLocalTopAnswers] = useState<SearchItem[]>([]);
   const [clusters, setLocalClusters] = useState<Cluster[]>([]);
   const [gaps, setLocalGaps] = useState<Gap[]>([]);
   const [meta, setLocalMeta] = useState<TerrainResult['meta'] | null>(null);
   const [activeAudit, setActiveAudit] = useState<string | null>(null);
   const [auditResult, setAuditResult] = useState<Record<string, { critique: string; risk_score: number }>>({});
-  const [hoveredNode, setHoveredNode] = useState<StarNode | null>(null);
+  const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
   const svgRef = useRef<SVGSVGElement>(null);
-  const simulationRef = useRef<d3.Simulation<StarNode, undefined> | null>(null);
+  const simulationRef = useRef<d3.Simulation<GraphNode, GraphLink> | null>(null);
 
   const handleAnalyze = useCallback(async () => {
     setPhase('fetching');
     setErrorMsg(null);
+    setLocalTopAnswers([]);
     setLocalClusters([]);
     setLocalGaps([]);
     setLocalMeta(null);
@@ -115,8 +128,9 @@ export default function Act3_Position() {
       setPhase('error');
       return;
     }
-    const topAnswers = answers.slice(0, 10);
-    setTopAnswers(topAnswers);
+    const top = answers.slice(0, 10);
+    setLocalTopAnswers(top);
+    setTopAnswers(top);
 
     // ─── Step 2: Terrain analysis (clusters + blind_spots) via LLM JSON mode ─
     let terrain: TerrainResult;
@@ -124,7 +138,7 @@ export default function Act3_Position() {
       terrain = await callLLMJson<TerrainResult>(
         [
           { role: 'system', content: CEHUI_SYSTEM_PROMPT },
-          { role: 'user', content: buildCehuiUserPrompt(query, topAnswers) },
+          { role: 'user', content: buildCehuiUserPrompt(query, top) },
         ],
         0.4,
       );
@@ -190,26 +204,45 @@ export default function Act3_Position() {
     }
   }, []);
 
-  // Build d3 nodes from clusters (spoken) + blind_spots (unspoken).
-  // LLM provides 0..100 x/y; we map them to SVG coordinates before simulation.
-  const buildNodes = useCallback((w: number, h: number): StarNode[] => {
+  // Build Obsidian-style graph: every answer is its own node colored by
+  // cluster dimension; edges link members of the same cluster (star pattern
+  // from the first member to the rest, keeps edge count O(n)). Blind spots
+  // remain isolated dashed rings. Cluster labels render as static SVG text.
+  const buildGraph = useCallback((w: number, h: number) => {
     const padX = 60;
-    const padY = 40;
+    const padY = 60;
     const mapX = (v: number) => padX + (Math.max(0, Math.min(100, v)) / 100) * (w - 2 * padX);
     const mapY = (v: number) => padY + (Math.max(0, Math.min(100, v)) / 100) * (h - 2 * padY);
 
-    const spokenNodes: StarNode[] = clusters.map((c) => {
-      const initX = mapX(c.x);
-      const initY = mapY(c.y);
+    // Build a lookup: answer index → its cluster (if any).
+    const answerToCluster = new Map<number, Cluster>();
+    for (const c of clusters) {
+      for (const idx of c.member_indices ?? []) {
+        answerToCluster.set(idx, c);
+      }
+    }
+
+    // Each answer becomes a small dot, anchored near its cluster center with
+    // a deterministic jitter so siblings spread without strobing on each tick.
+    const answerNodes: GraphNode[] = topAnswers.map((a, idx) => {
+      const cluster = answerToCluster.get(idx);
+      const baseX = cluster ? mapX(cluster.x) : w / 2;
+      const baseY = cluster ? mapY(cluster.y) : h / 2;
+      // Deterministic pseudo-jitter from idx so the layout is stable across renders.
+      const angle = (idx * 137.5) * (Math.PI / 180);
+      const initX = baseX + Math.cos(angle) * 14;
+      const initY = baseY + Math.sin(angle) * 14;
       return {
-        id: `cluster-${c.cluster_id}`,
-        label: c.label,
-        type: 'spoken',
-        r: 10 + Math.sqrt(Math.max(1, c.answer_count)) * 3,
-        color: DIMENSION_COLOR[c.dimension] ?? DIMENSION_COLOR.viewpoint,
-        answerCount: c.answer_count,
-        upvotes: c.total_upvotes,
-        dimension: c.dimension,
+        id: `ans-${idx}`,
+        type: 'answer',
+        answerIdx: idx,
+        title: a.Title,
+        upvotes: a.VoteUpCount,
+        authorName: a.AuthorName,
+        clusterId: cluster?.cluster_id,
+        r: 4 + Math.log10(Math.max(10, a.VoteUpCount || 1)) * 1.4,
+        color: cluster ? DIMENSION_COLOR[cluster.dimension] : DIMENSION_COLOR.viewpoint,
+        dimension: cluster?.dimension,
         initX,
         initY,
         x: initX,
@@ -217,20 +250,19 @@ export default function Act3_Position() {
       };
     });
 
-    const unspokenNodes: StarNode[] = gaps.map((g) => {
+    const gapNodes: GraphNode[] = gaps.map((g) => {
       const initX = mapX(g.x);
       const initY = mapY(g.y);
-      const v = verdictFor(g.potential_value);
       return {
         id: `gap-${g.id}`,
-        label: g.description,
-        type: 'unspoken',
-        r: 12 + g.potential_value * 2.5,
-        color: VERDICT_RING[v],
-        potentialValue: g.potential_value,
-        dimension: g.dimension,
+        type: 'gap',
+        gapId: g.id,
         description: g.description,
         suggestedBackground: g.suggested_background,
+        potentialValue: g.potential_value,
+        dimension: g.dimension,
+        r: 12 + g.potential_value * 2.2,
+        color: VERDICT_RING[verdictFor(g.potential_value)],
         initX,
         initY,
         x: initX,
@@ -238,12 +270,32 @@ export default function Act3_Position() {
       };
     });
 
-    return [...spokenNodes, ...unspokenNodes];
-  }, [clusters, gaps]);
+    // Star-pattern links: every member after the first is linked to the first
+    // member. Keeps the cluster visually tight without O(n²) edges.
+    const links: GraphLink[] = [];
+    for (const c of clusters) {
+      const members = c.member_indices ?? [];
+      if (members.length < 2) continue;
+      const root = members[0];
+      for (let i = 1; i < members.length; i++) {
+        links.push({ source: `ans-${root}`, target: `ans-${members[i]}` });
+      }
+    }
 
-  // Run D3 simulation: anchor each node to its LLM-provided x/y (forceX/Y),
-  // then forceCollide prevents overlap. No links — the spatial layout itself
-  // encodes semantic relationships.
+    const labels = clusters.map((c) => ({
+      cluster_id: c.cluster_id,
+      label: c.label,
+      x: mapX(c.x),
+      y: mapY(c.y),
+      color: DIMENSION_COLOR[c.dimension],
+      count: c.answer_count,
+    }));
+
+    return { nodes: [...answerNodes, ...gapNodes], links, labels };
+  }, [clusters, gaps, topAnswers]);
+
+  // D3 force simulation: forceLink keeps cluster members close, forceX/Y
+  // pulls each toward its anchor, forceCollide prevents overlap.
   useEffect(() => {
     if (phase !== 'done') return;
     const svg = svgRef.current;
@@ -253,39 +305,63 @@ export default function Act3_Position() {
     const h = rect.height;
     if (w === 0 || h === 0) return;
 
-    const nodes = buildNodes(w, h);
+    const { nodes, links, labels } = buildGraph(w, h);
 
     if (simulationRef.current) simulationRef.current.stop();
 
     const simulation = d3
-      .forceSimulation<StarNode>(nodes)
-      .force('x', d3.forceX<StarNode>((d) => d.initX ?? w / 2).strength(0.45))
-      .force('y', d3.forceY<StarNode>((d) => d.initY ?? h / 2).strength(0.45))
-      .force('collide', d3.forceCollide<StarNode>().radius((d) => d.r + 6).strength(0.9))
+      .forceSimulation<GraphNode>(nodes)
+      .force(
+        'link',
+        d3
+          .forceLink<GraphNode, GraphLink>(links)
+          .id((d) => d.id)
+          .distance(26)
+          .strength(0.45),
+      )
+      .force('x', d3.forceX<GraphNode>((d) => d.initX ?? w / 2).strength(0.18))
+      .force('y', d3.forceY<GraphNode>((d) => d.initY ?? h / 2).strength(0.18))
+      .force('collide', d3.forceCollide<GraphNode>().radius((d) => d.r + 4).strength(0.9))
+      .force('charge', d3.forceManyBody().strength(-28))
       .alpha(0.9)
-      .alphaDecay(0.06);
+      .alphaDecay(0.04);
 
     simulationRef.current = simulation;
 
     const ticked = () => {
       const g = d3.select(svg).select('g');
 
-      g.selectAll<SVGCircleElement, StarNode>('circle.spoken')
-        .data(nodes.filter((n) => n.type === 'spoken'), (d) => d.id)
+      // Edges first (so they render under the nodes).
+      g.selectAll<SVGLineElement, GraphLink>('line.edge')
+        .data(links)
+        .join('line')
+        .attr('class', 'edge')
+        .attr('x1', (d) => (d.source as GraphNode).x ?? 0)
+        .attr('y1', (d) => (d.source as GraphNode).y ?? 0)
+        .attr('x2', (d) => (d.target as GraphNode).x ?? 0)
+        .attr('y2', (d) => (d.target as GraphNode).y ?? 0)
+        .attr('stroke', 'rgba(232, 227, 216, 0.18)')
+        .attr('stroke-width', 1);
+
+      // Answer dots (filled, small).
+      g.selectAll<SVGCircleElement, GraphNode>('circle.answer')
+        .data(nodes.filter((n) => n.type === 'answer'), (d) => d.id)
         .join('circle')
-        .attr('class', 'spoken')
+        .attr('class', 'answer')
         .attr('cx', (d) => d.x ?? 0)
         .attr('cy', (d) => d.y ?? 0)
         .attr('r', (d) => d.r)
         .attr('fill', (d) => d.color)
-        .attr('fill-opacity', 0.85)
-        .style('cursor', 'pointer')
-        .style('filter', 'drop-shadow(0 0 6px rgba(232, 227, 216, 0.35))');
+        .attr('fill-opacity', 0.9)
+        .attr('stroke', 'rgba(232, 227, 216, 0.4)')
+        .attr('stroke-width', 0.8)
+        .style('cursor', 'pointer');
 
-      g.selectAll<SVGCircleElement, StarNode>('circle.unspoken')
-        .data(nodes.filter((n) => n.type === 'unspoken'), (d) => d.id)
+      // Gap rings (hollow, dashed).
+      g.selectAll<SVGCircleElement, GraphNode>('circle.gap')
+        .data(nodes.filter((n) => n.type === 'gap'), (d) => d.id)
         .join('circle')
-        .attr('class', 'unspoken')
+        .attr('class', 'gap')
         .attr('cx', (d) => d.x ?? 0)
         .attr('cy', (d) => d.y ?? 0)
         .attr('r', (d) => d.r)
@@ -294,18 +370,19 @@ export default function Act3_Position() {
         .attr('stroke-width', 1.8)
         .attr('stroke-dasharray', '4 4')
         .style('cursor', 'pointer')
-        .style('opacity', (d) => (selectedGap?.id && d.id === `gap-${selectedGap.id}` ? 1 : 0.7));
+        .style('opacity', (d) => (selectedGap?.id && d.id === `gap-${selectedGap.id}` ? 1 : 0.75));
 
-      g.selectAll<SVGCircleElement, StarNode>('circle.hit')
+      // Larger transparent hit area for hover/click.
+      g.selectAll<SVGCircleElement, GraphNode>('circle.hit')
         .data(nodes, (d) => d.id)
         .join('circle')
         .attr('class', 'hit')
         .attr('cx', (d) => d.x ?? 0)
         .attr('cy', (d) => d.y ?? 0)
-        .attr('r', (d) => d.r + 6)
+        .attr('r', (d) => d.r + 7)
         .attr('fill', 'transparent')
         .style('cursor', 'pointer')
-        .on('mouseenter', (event: MouseEvent, d: StarNode) => {
+        .on('mouseenter', (event: MouseEvent, d: GraphNode) => {
           setHoveredNode(d);
           setMousePos({ x: event.clientX, y: event.clientY });
         })
@@ -313,12 +390,27 @@ export default function Act3_Position() {
           setMousePos({ x: event.clientX, y: event.clientY });
         })
         .on('mouseleave', () => setHoveredNode(null))
-        .on('click', (_event: MouseEvent, d: StarNode) => {
-          if (d.type !== 'unspoken') return;
-          const gapId = d.id.replace(/^gap-/, '');
-          const gap = gaps.find((g) => g.id === gapId);
+        .on('click', (_event: MouseEvent, d: GraphNode) => {
+          if (d.type !== 'gap') return;
+          const gap = gaps.find((g) => g.id === d.gapId);
           if (gap) setSelectedGap(selectedGap?.id === gap.id ? null : gap);
         });
+
+      // Cluster labels — static text floating above the cluster anchors.
+      g.selectAll<SVGTextElement, typeof labels[number]>('text.cluster-label')
+        .data(labels, (d) => d.cluster_id)
+        .join('text')
+        .attr('class', 'cluster-label')
+        .attr('x', (d) => d.x)
+        .attr('y', (d) => d.y - 32)
+        .attr('text-anchor', 'middle')
+        .attr('fill', (d) => d.color)
+        .attr('font-family', '"Noto Serif SC", serif')
+        .attr('font-size', 11)
+        .attr('font-weight', 600)
+        .style('letter-spacing', '0.05em')
+        .style('opacity', 0.9)
+        .text((d) => `${d.label} · ${d.count}`);
     };
 
     simulation.on('tick', ticked);
@@ -326,7 +418,7 @@ export default function Act3_Position() {
     return () => {
       simulation.stop();
     };
-  }, [buildNodes, phase, gaps, selectedGap, setSelectedGap]);
+  }, [buildGraph, phase, gaps, selectedGap, setSelectedGap]);
 
   return (
     <div className="h-full flex flex-col lg:flex-row gap-6 px-6 py-6 overflow-hidden">
@@ -345,7 +437,7 @@ export default function Act3_Position() {
               ? '答场星图 · 等待测绘'
               : phase === 'fetching'
               ? '测绘师正在工作中…'
-              : `答场星图 · ${clusters.length} 簇已言 / ${gaps.length} 处未言${meta ? ` · 饱和度 ${meta.saturation_level}` : ''}`}
+              : `答场图谱 · ${topAnswers.length} 答 / ${clusters.length} 簇 / ${gaps.length} 盲区${meta ? ` · 饱和度 ${meta.saturation_level}` : ''}`}
           </span>
         </div>
 
@@ -468,21 +560,26 @@ export default function Act3_Position() {
                   maxWidth: 280,
                 }}
               >
-                <p className="text-caption font-serif font-medium" style={{ color: '#1C1A18' }}>
-                  {hoveredNode.label}
-                </p>
-                {hoveredNode.type === 'spoken' && (
-                  <p className="text-micro font-sans mt-0.5" style={{ color: '#8A847C' }}>
-                    {hoveredNode.dimension ? `${DIMENSION_LABEL[hoveredNode.dimension]} · ` : ''}
-                    {hoveredNode.answerCount ?? 0} 答 ·{' '}
-                    {(hoveredNode.upvotes ?? 0) >= 10000
-                      ? `${((hoveredNode.upvotes ?? 0) / 10000).toFixed(1)}万`
-                      : hoveredNode.upvotes ?? 0}{' '}
-                    赞同
-                  </p>
-                )}
-                {hoveredNode.type === 'unspoken' && (
+                {hoveredNode.type === 'answer' && (
                   <>
+                    <p className="text-caption font-serif font-medium" style={{ color: '#1C1A18', lineHeight: 1.5 }}>
+                      {hoveredNode.title ?? '（无标题）'}
+                    </p>
+                    <p className="text-micro font-sans mt-1" style={{ color: '#8A847C' }}>
+                      {hoveredNode.dimension ? `${DIMENSION_LABEL[hoveredNode.dimension]} · ` : ''}
+                      {hoveredNode.authorName ? `${hoveredNode.authorName} · ` : ''}
+                      {(hoveredNode.upvotes ?? 0) >= 10000
+                        ? `${((hoveredNode.upvotes ?? 0) / 10000).toFixed(1)}万`
+                        : hoveredNode.upvotes ?? 0}{' '}
+                      赞同
+                    </p>
+                  </>
+                )}
+                {hoveredNode.type === 'gap' && (
+                  <>
+                    <p className="text-caption font-serif font-medium" style={{ color: '#1C1A18' }}>
+                      {hoveredNode.description ?? '盲区'}
+                    </p>
                     <p className="text-micro font-sans mt-0.5" style={{ color: '#8A847C' }}>
                       {hoveredNode.dimension ? `${DIMENSION_LABEL[hoveredNode.dimension]} · ` : ''}
                       价值 {hoveredNode.potentialValue ?? '?'}/5
