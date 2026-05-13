@@ -1,5 +1,5 @@
 /**
- * Home Page — Main 7-Act Interface
+ * Home Page — Main 6-Act Interface
  *
  * All acts live on one page, controlled by the timeline.
  * Uses Layout component and renders the current act's section.
@@ -13,8 +13,7 @@ import {
   Act3_Position,
   Act4_Draft,
   Act5_Rehearsal,
-  Act6_Review,
-  Act7_Publish,
+  Act6_Publish,
 } from '@/sections';
 
 const ACT_COMPONENTS = [
@@ -24,8 +23,7 @@ const ACT_COMPONENTS = [
   Act3_Position,
   Act4_Draft,
   Act5_Rehearsal,
-  Act6_Review,
-  Act7_Publish,
+  Act6_Publish,
 ];
 
 export default function Home() {

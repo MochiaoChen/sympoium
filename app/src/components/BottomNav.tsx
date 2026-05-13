@@ -22,8 +22,7 @@ export default function BottomNav() {
     if (currentAct === 3) return !!selectedGap;
     if (currentAct === 4) return draft.trim().length > 20;
     if (currentAct === 5) return true;
-    if (currentAct === 6) return true;
-    if (currentAct === 7) return false;
+    if (currentAct === 6) return false;
     return true;
   };
 
@@ -32,11 +31,11 @@ export default function BottomNav() {
   };
 
   const handleForward = () => {
-    if (currentAct < 7 && canGoForward()) setCurrentAct(currentAct + 1);
+    if (currentAct < 6 && canGoForward()) setCurrentAct(currentAct + 1);
   };
 
   const forwardLabel =
-    currentAct === 6 ? '出酒' : currentAct === 7 ? '完成' : '下一步';
+    currentAct === 5 ? '出酒' : currentAct === 6 ? '完成' : '下一步';
 
   return (
     <div
@@ -85,7 +84,7 @@ export default function BottomNav() {
 
       {/* Right — Forward button */}
       <div className="w-1/4 flex justify-end">
-        {currentAct < 7 && (
+        {currentAct < 6 && (
           <motion.button
             whileHover={canGoForward() ? { scale: 1.02, y: -1 } : {}}
             whileTap={canGoForward() ? { scale: 0.98 } : {}}

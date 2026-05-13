@@ -1,5 +1,5 @@
 /**
- * Act 7 — 出酒 (Publication)
+ * Act 6 — 出酒 (Publication)
  *
  * 预览加发布布局。
  * 最终预览（干净的长文阅读视图），发布到知乎圈子 / 复制全文。
@@ -11,7 +11,7 @@ import { Copy, Check, ExternalLink } from 'lucide-react';
 import { useSymposiumStore } from '@/store/useSymposiumStore';
 import AgentBadge from '@/components/AgentBadge';
 
-export default function Act7_Publish() {
+export default function Act6_Publish() {
   const draft = useSymposiumStore((s) => s.draft);
   const selectedQuestion = useSymposiumStore((s) => s.selectedQuestion);
   const editorRoundResult = useSymposiumStore((s) => s.editorRoundResult);
