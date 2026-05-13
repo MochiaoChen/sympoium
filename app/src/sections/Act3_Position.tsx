@@ -10,16 +10,15 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as d3 from 'd3';
-import type { SearchItem } from '@/services/api';
+import type { Cluster, TerrainResult, TerrainDimension } from '@/services/api';
 import { useSymposiumStore } from '@/store/useSymposiumStore';
 import type { Gap } from '@/store/useSymposiumStore';
 import AgentBadge from '@/components/AgentBadge';
 import LoadingDots from '@/components/LoadingDots';
-import { callLLM, searchZhihu } from '@/services/api';
-import { CEHUI_SYSTEM_PROMPT, WENNAN_SYSTEM_PROMPT } from '@/data/agentPrompts';
+import { callLLMJson, searchCombined } from '@/services/api';
+import { CEHUI_SYSTEM_PROMPT, buildCehuiUserPrompt, WENNAN_SYSTEM_PROMPT } from '@/data/agentPrompts';
 
-// NOTE: All mock/fallback data removed. If APIs fail, we show the error
-// directly instead of silently substituting fake data.
+// All mock/fallback data removed. If APIs fail, surface the error.
 
 interface StarNode extends d3.SimulationNodeDatum {
   id: string;
@@ -27,18 +26,41 @@ interface StarNode extends d3.SimulationNodeDatum {
   type: 'spoken' | 'unspoken';
   r: number;
   color: string;
-  voteCount?: number;
-  audit?: string;
-  x?: number;
-  y?: number;
-}
-
-interface StarLink extends d3.SimulationLinkDatum<StarNode> {
-  source: string | StarNode;
-  target: string | StarNode;
+  // For spoken: clusters carry answer_count + total_upvotes for tooltip.
+  answerCount?: number;
+  upvotes?: number;
+  dimension?: TerrainDimension;
+  // For unspoken: potential_value drives the verdict badge.
+  potentialValue?: number;
+  description?: string;
+  suggestedBackground?: string;
+  // 0..100 grid coords from the LLM, mapped to SVG coords before simulation.
+  initX?: number;
+  initY?: number;
 }
 
 type AnalysisPhase = 'idle' | 'fetching' | 'done' | 'error';
+
+// Map potential_value 1..5 → verdict label/color used in the right-side list.
+type Verdict = 'gold' | 'questionable' | 'dead_end';
+function verdictFor(potential: number): Verdict {
+  if (potential >= 4) return 'gold';
+  if (potential <= 1) return 'dead_end';
+  return 'questionable';
+}
+const VERDICT_LABEL: Record<Verdict, string> = { gold: '金', questionable: '可疑', dead_end: '死路' };
+const VERDICT_COLOR: Record<Verdict, string> = { gold: '#4A6B42', questionable: '#A07535', dead_end: '#8B3A2C' };
+const VERDICT_RING: Record<Verdict, string> = { gold: '#D9B88E', questionable: '#A07535', dead_end: '#8B3A2C' };
+
+// Tint clusters by dimension so the star map reads at a glance.
+const DIMENSION_COLOR: Record<TerrainDimension, string> = {
+  viewpoint: '#E8E3D8',  // 立场 — 米白
+  knowledge: '#C9B68A',  // 知识 — 米金
+  experience: '#A8B89B', // 经验 — 暗青
+};
+const DIMENSION_LABEL: Record<TerrainDimension, string> = {
+  viewpoint: '立场', knowledge: '知识', experience: '经验',
+};
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -47,36 +69,43 @@ export default function Act3_Position() {
   const selectedGap = useSymposiumStore((s) => s.selectedGap);
   const setSelectedGap = useSymposiumStore((s) => s.setSelectedGap);
   const setTopAnswers = useSymposiumStore((s) => s.setTopAnswers);
+  const setClustersStore = useSymposiumStore((s) => s.setClusters);
+  const setTerrainMeta = useSymposiumStore((s) => s.setTerrainMeta);
   const setUnsaidSet = useSymposiumStore((s) => s.setUnsaidSet);
 
   const [phase, setPhase] = useState<AnalysisPhase>('idle');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [topAnswers, setLocalTopAnswers] = useState<SearchItem[]>([]);
+  const [clusters, setLocalClusters] = useState<Cluster[]>([]);
   const [gaps, setLocalGaps] = useState<Gap[]>([]);
+  const [meta, setLocalMeta] = useState<TerrainResult['meta'] | null>(null);
   const [activeAudit, setActiveAudit] = useState<string | null>(null);
   const [auditResult, setAuditResult] = useState<Record<string, { critique: string; risk_score: number }>>({});
   const [hoveredNode, setHoveredNode] = useState<StarNode | null>(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
   const svgRef = useRef<SVGSVGElement>(null);
-  const simulationRef = useRef<d3.Simulation<StarNode, StarLink> | null>(null);
-  const nodesRef = useRef<StarNode[]>([]);
-  const linksRef = useRef<StarLink[]>([]);
+  const simulationRef = useRef<d3.Simulation<StarNode, undefined> | null>(null);
 
   const handleAnalyze = useCallback(async () => {
     setPhase('fetching');
     setErrorMsg(null);
-    setLocalTopAnswers([]);
+    setLocalClusters([]);
     setLocalGaps([]);
+    setLocalMeta(null);
 
-    // ─── Step 1: Fetch real search results from Zhihu ────────────────────────
-    let realAnswers: SearchItem[] = [];
+    const query = selectedQuestion?.title ?? '';
+    if (!query) {
+      setErrorMsg('尚未选择问题，请返回第二幕选择一个问题。');
+      setPhase('error');
+      return;
+    }
+
+    // ─── Step 1: Parallel Zhihu search (in-site + global), dedup, sort ───────
+    let answers;
     try {
-      const query = selectedQuestion?.title ?? '';
-      if (!query) throw new Error('尚未选择问题，请返回第二幕选择一个问题。');
-      realAnswers = await searchZhihu(query, 5);
-      console.log('[Act3] Zhihu search returned', realAnswers.length, 'items', realAnswers);
-      if (realAnswers.length === 0) {
+      answers = await searchCombined(query);
+      console.log('[Act3] searchCombined →', answers.length, 'items');
+      if (answers.length === 0) {
         throw new Error('知乎搜索未返回任何结果，请检查 API 配置或换一个关键词。');
       }
     } catch (e) {
@@ -86,57 +115,69 @@ export default function Act3_Position() {
       setPhase('error');
       return;
     }
+    const topAnswers = answers.slice(0, 10);
+    setTopAnswers(topAnswers);
 
-    // Update local + store with REAL data only
-    setLocalTopAnswers(realAnswers);
-    setTopAnswers(realAnswers);
-
-    // ─── Step 2: Call Kimi for real gap analysis ─────────────────────────────
-    let parsedGaps: Gap[] = [];
+    // ─── Step 2: Terrain analysis (clusters + blind_spots) via LLM JSON mode ─
+    let terrain: TerrainResult;
     try {
-      const prompt = `${CEHUI_SYSTEM_PROMPT}\n\n问题：${selectedQuestion?.title ?? ''}\n\n已有高赞回答：\n${realAnswers.map((a, i) => `${i + 1}. ${a.Title}：${a.ContentText ?? '（无摘要）'}`).join('\n')}`;
-      const res = await callLLM([
-        { role: 'system', content: prompt },
-        { role: 'user', content: '请分析答场，输出JSON。' },
-      ]);
-      const json = JSON.parse(res);
-      if (json.unspoken_set && Array.isArray(json.unspoken_set)) {
-        parsedGaps = json.unspoken_set;
-      } else {
-        throw new Error('Kimi 返回的 JSON 缺少 unspoken_set 字段');
+      terrain = await callLLMJson<TerrainResult>(
+        [
+          { role: 'system', content: CEHUI_SYSTEM_PROMPT },
+          { role: 'user', content: buildCehuiUserPrompt(query, topAnswers) },
+        ],
+        0.4,
+      );
+      if (!Array.isArray(terrain.clusters) || !Array.isArray(terrain.blind_spots)) {
+        throw new Error('AI 返回的 JSON 缺少 clusters 或 blind_spots 字段');
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      console.error('[Act3] Kimi analysis failed:', msg);
-      setErrorMsg(`Kimi 分析失败：${msg}。已显示真实搜索结果，但间隙分析未完成。`);
-      setLocalGaps([]);
+      console.error('[Act3] Terrain analysis failed:', msg);
+      setErrorMsg(`AI 分析失败：${msg}`);
       setUnsaidSet([]);
+      setClustersStore([]);
+      setTerrainMeta(null);
       setPhase('error');
       return;
     }
 
-    // ─── Step 3: Update state with REAL gaps ─────────────────────────────────
+    // Normalize blind_spots → Gap[]. Derive legacy audit_verdict from
+    // potential_value so Act 6 圆桌会 speeches keep their existing logic.
+    const parsedGaps: Gap[] = terrain.blind_spots.map((b) => ({
+      id: b.gap_id,
+      description: b.description,
+      reasoning: b.reasoning,
+      dimension: b.dimension,
+      potential_value: b.potential_value,
+      suggested_background: b.suggested_background,
+      x: b.x,
+      y: b.y,
+      audit_verdict: verdictFor(b.potential_value),
+    }));
+
+    setLocalClusters(terrain.clusters);
     setLocalGaps(parsedGaps);
+    setLocalMeta(terrain.meta);
+    setClustersStore(terrain.clusters);
+    setTerrainMeta(terrain.meta);
     setUnsaidSet(parsedGaps);
     setPhase('done');
-  }, [selectedQuestion, setTopAnswers, setUnsaidSet]);
+  }, [selectedQuestion, setTopAnswers, setClustersStore, setTerrainMeta, setUnsaidSet]);
 
   const handleAudit = useCallback(async (gap: Gap) => {
     setActiveAudit(gap.id);
     try {
-      const prompt = `${WENNAN_SYSTEM_PROMPT}\n\n待审判的角度：${gap.description}\n推理：${gap.reasoning}`;
-      const res = await callLLM([
+      const prompt = `${WENNAN_SYSTEM_PROMPT}\n\n待审判的角度：${gap.description}\n推理：${gap.reasoning}\n建议背景：${gap.suggested_background}`;
+      const json = await callLLMJson<{ assessments?: { critique: string; risk_score: number }[] }>([
         { role: 'system', content: prompt },
         { role: 'user', content: '请审判这个角度，输出JSON。' },
-      ]);
-      const json = JSON.parse(res);
-      if (json.assessments?.[0]) {
+      ], 0.5);
+      const first = json.assessments?.[0];
+      if (first) {
         setAuditResult((prev) => ({
           ...prev,
-          [gap.id]: {
-            critique: json.assessments[0].critique,
-            risk_score: json.assessments[0].risk_score,
-          },
+          [gap.id]: { critique: first.critique, risk_score: first.risk_score },
         }));
       }
     } catch {
@@ -149,42 +190,60 @@ export default function Act3_Position() {
     }
   }, []);
 
-  // Build nodes & links from data
-  const buildGraph = useCallback(() => {
-    const nodes: StarNode[] = [
-      ...topAnswers.map((a, i) => ({
-        id: `spoken-${i}`,
-        label: a.Title.slice(0, 14) + (a.Title.length > 14 ? '…' : ''),
-        type: 'spoken' as const,
-        r: 5 + (a.VoteUpCount / 15000) * 7,
-        color: '#E8E3D8',
-        voteCount: a.VoteUpCount,
-      })),
-      ...gaps.map((g, i) => ({
-        id: `unspoken-${i}`,
-        label: g.description,
-        type: 'unspoken' as const,
-        r: g.audit_verdict === 'gold' ? 22 : g.audit_verdict === 'dead_end' ? 14 : 18,
-        color: g.audit_verdict === 'gold' ? '#D9B88E' : g.audit_verdict === 'dead_end' ? '#8B3A2C' : '#A07535',
-        audit: g.audit_verdict,
-      })),
-    ];
+  // Build d3 nodes from clusters (spoken) + blind_spots (unspoken).
+  // LLM provides 0..100 x/y; we map them to SVG coordinates before simulation.
+  const buildNodes = useCallback((w: number, h: number): StarNode[] => {
+    const padX = 60;
+    const padY = 40;
+    const mapX = (v: number) => padX + (Math.max(0, Math.min(100, v)) / 100) * (w - 2 * padX);
+    const mapY = (v: number) => padY + (Math.max(0, Math.min(100, v)) / 100) * (h - 2 * padY);
 
-    const links: StarLink[] = [];
-    for (let i = 0; i < topAnswers.length; i++) {
-      for (let j = i + 1; j < topAnswers.length; j++) {
-        links.push({ source: `spoken-${i}`, target: `spoken-${j}` });
-      }
-    }
-    gaps.forEach((_, i) => {
-      const targetIdx = Math.floor(Math.random() * Math.max(1, topAnswers.length));
-      links.push({ source: `unspoken-${i}`, target: `spoken-${targetIdx}` });
+    const spokenNodes: StarNode[] = clusters.map((c) => {
+      const initX = mapX(c.x);
+      const initY = mapY(c.y);
+      return {
+        id: `cluster-${c.cluster_id}`,
+        label: c.label,
+        type: 'spoken',
+        r: 10 + Math.sqrt(Math.max(1, c.answer_count)) * 3,
+        color: DIMENSION_COLOR[c.dimension] ?? DIMENSION_COLOR.viewpoint,
+        answerCount: c.answer_count,
+        upvotes: c.total_upvotes,
+        dimension: c.dimension,
+        initX,
+        initY,
+        x: initX,
+        y: initY,
+      };
     });
 
-    return { nodes, links };
-  }, [topAnswers, gaps]);
+    const unspokenNodes: StarNode[] = gaps.map((g) => {
+      const initX = mapX(g.x);
+      const initY = mapY(g.y);
+      const v = verdictFor(g.potential_value);
+      return {
+        id: `gap-${g.id}`,
+        label: g.description,
+        type: 'unspoken',
+        r: 12 + g.potential_value * 2.5,
+        color: VERDICT_RING[v],
+        potentialValue: g.potential_value,
+        dimension: g.dimension,
+        description: g.description,
+        suggestedBackground: g.suggested_background,
+        initX,
+        initY,
+        x: initX,
+        y: initY,
+      };
+    });
 
-  // Run D3 force simulation whenever data changes
+    return [...spokenNodes, ...unspokenNodes];
+  }, [clusters, gaps]);
+
+  // Run D3 simulation: anchor each node to its LLM-provided x/y (forceX/Y),
+  // then forceCollide prevents overlap. No links — the spatial layout itself
+  // encodes semantic relationships.
   useEffect(() => {
     if (phase !== 'done') return;
     const svg = svgRef.current;
@@ -194,78 +253,56 @@ export default function Act3_Position() {
     const h = rect.height;
     if (w === 0 || h === 0) return;
 
-    const { nodes, links } = buildGraph();
-    nodesRef.current = nodes;
-    linksRef.current = links;
+    const nodes = buildNodes(w, h);
 
-    if (simulationRef.current) {
-      simulationRef.current.stop();
-    }
+    if (simulationRef.current) simulationRef.current.stop();
 
     const simulation = d3
       .forceSimulation<StarNode>(nodes)
-      .force(
-        'link',
-        d3.forceLink<StarNode, StarLink>(links).id((d: StarNode) => d.id).distance((d: StarLink) => {
-          const s = d.source as StarNode;
-          const t = d.target as StarNode;
-          return s.type === 'unspoken' || t.type === 'unspoken' ? 140 : 80;
-        })
-      )
-      .force('charge', d3.forceManyBody().strength((d: d3.SimulationNodeDatum) => ((d as StarNode).type === 'unspoken' ? -80 : -120)))
-      .force('center', d3.forceCenter(w / 2, h / 2))
-      .force('collide', d3.forceCollide<StarNode>().radius((d: StarNode) => d.r + 8))
-      .force('x', d3.forceX(w / 2).strength(0.05))
-      .force('y', d3.forceY(h / 2).strength(0.05));
+      .force('x', d3.forceX<StarNode>((d) => d.initX ?? w / 2).strength(0.45))
+      .force('y', d3.forceY<StarNode>((d) => d.initY ?? h / 2).strength(0.45))
+      .force('collide', d3.forceCollide<StarNode>().radius((d) => d.r + 6).strength(0.9))
+      .alpha(0.9)
+      .alphaDecay(0.06);
 
     simulationRef.current = simulation;
 
     const ticked = () => {
       const g = d3.select(svg).select('g');
 
-      g.selectAll<SVGLineElement, StarLink>('line.link')
-        .data(links)
-        .join('line')
-        .attr('class', 'link')
-        .attr('x1', (d: StarLink) => (d.source as StarNode).x ?? 0)
-        .attr('y1', (d: StarLink) => (d.source as StarNode).y ?? 0)
-        .attr('x2', (d: StarLink) => (d.target as StarNode).x ?? 0)
-        .attr('y2', (d: StarLink) => (d.target as StarNode).y ?? 0)
-        .attr('stroke', 'rgba(232, 227, 216, 0.2)')
-        .attr('stroke-width', 1);
-
       g.selectAll<SVGCircleElement, StarNode>('circle.spoken')
-        .data(nodes.filter((n: StarNode) => n.type === 'spoken'))
+        .data(nodes.filter((n) => n.type === 'spoken'), (d) => d.id)
         .join('circle')
         .attr('class', 'spoken')
-        .attr('cx', (d: StarNode) => d.x ?? 0)
-        .attr('cy', (d: StarNode) => d.y ?? 0)
-        .attr('r', (d: StarNode) => d.r)
-        .attr('fill', 'rgba(232, 227, 216, 0.85)')
+        .attr('cx', (d) => d.x ?? 0)
+        .attr('cy', (d) => d.y ?? 0)
+        .attr('r', (d) => d.r)
+        .attr('fill', (d) => d.color)
+        .attr('fill-opacity', 0.85)
         .style('cursor', 'pointer')
         .style('filter', 'drop-shadow(0 0 6px rgba(232, 227, 216, 0.35))');
 
       g.selectAll<SVGCircleElement, StarNode>('circle.unspoken')
-        .data(nodes.filter((n: StarNode) => n.type === 'unspoken'))
+        .data(nodes.filter((n) => n.type === 'unspoken'), (d) => d.id)
         .join('circle')
         .attr('class', 'unspoken')
-        .attr('cx', (d: StarNode) => d.x ?? 0)
-        .attr('cy', (d: StarNode) => d.y ?? 0)
-        .attr('r', (d: StarNode) => d.r)
+        .attr('cx', (d) => d.x ?? 0)
+        .attr('cy', (d) => d.y ?? 0)
+        .attr('r', (d) => d.r)
         .attr('fill', 'none')
-        .attr('stroke', (d: StarNode) => d.color)
-        .attr('stroke-width', 1.5)
+        .attr('stroke', (d) => d.color)
+        .attr('stroke-width', 1.8)
         .attr('stroke-dasharray', '4 4')
         .style('cursor', 'pointer')
-        .style('opacity', 0.7);
+        .style('opacity', (d) => (selectedGap?.id && d.id === `gap-${selectedGap.id}` ? 1 : 0.7));
 
       g.selectAll<SVGCircleElement, StarNode>('circle.hit')
-        .data(nodes)
+        .data(nodes, (d) => d.id)
         .join('circle')
         .attr('class', 'hit')
-        .attr('cx', (d: StarNode) => d.x ?? 0)
-        .attr('cy', (d: StarNode) => d.y ?? 0)
-        .attr('r', (d: StarNode) => d.r + 6)
+        .attr('cx', (d) => d.x ?? 0)
+        .attr('cy', (d) => d.y ?? 0)
+        .attr('r', (d) => d.r + 6)
         .attr('fill', 'transparent')
         .style('cursor', 'pointer')
         .on('mouseenter', (event: MouseEvent, d: StarNode) => {
@@ -277,21 +314,19 @@ export default function Act3_Position() {
         })
         .on('mouseleave', () => setHoveredNode(null))
         .on('click', (_event: MouseEvent, d: StarNode) => {
-          if (d.type === 'unspoken') {
-            const idx = parseInt(d.id.split('-')[1], 10);
-            const gap = gaps[idx];
-            if (gap) setSelectedGap(selectedGap?.id === gap.id ? null : gap);
-          }
+          if (d.type !== 'unspoken') return;
+          const gapId = d.id.replace(/^gap-/, '');
+          const gap = gaps.find((g) => g.id === gapId);
+          if (gap) setSelectedGap(selectedGap?.id === gap.id ? null : gap);
         });
     };
 
     simulation.on('tick', ticked);
-    simulation.alpha(1).restart();
 
     return () => {
       simulation.stop();
     };
-  }, [buildGraph, phase, gaps, selectedGap, setSelectedGap]);
+  }, [buildNodes, phase, gaps, selectedGap, setSelectedGap]);
 
   return (
     <div className="h-full flex flex-col lg:flex-row gap-6 px-6 py-6 overflow-hidden">
@@ -306,7 +341,11 @@ export default function Act3_Position() {
         <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid rgba(232, 227, 216, 0.1)' }}>
           <AgentBadge agent="cehui" showRole size="sm" />
           <span className="text-micro font-sans" style={{ color: '#8A847C' }}>
-            {phase === 'idle' ? '答场星图 · 等待测绘' : phase === 'fetching' ? '测绘师正在工作中…' : `答场星图 · ${topAnswers.length} 已言 / ${gaps.length} 未言`}
+            {phase === 'idle'
+              ? '答场星图 · 等待测绘'
+              : phase === 'fetching'
+              ? '测绘师正在工作中…'
+              : `答场星图 · ${clusters.length} 簇已言 / ${gaps.length} 处未言${meta ? ` · 饱和度 ${meta.saturation_level}` : ''}`}
           </span>
         </div>
 
@@ -390,15 +429,23 @@ export default function Act3_Position() {
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="absolute bottom-3 left-3 flex flex-col gap-2"
+                className="absolute bottom-3 left-3 flex flex-col gap-1.5"
               >
                 <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: 'rgba(232, 227, 216, 0.85)' }} />
-                  <span className="text-micro font-sans" style={{ color: '#8A847C' }}>已言节点</span>
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: DIMENSION_COLOR.viewpoint }} />
+                  <span className="text-micro font-sans" style={{ color: '#8A847C' }}>已言 · 立场</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full border" style={{ borderColor: '#D9B88E', borderStyle: 'dashed' }} />
-                  <span className="text-micro font-sans" style={{ color: '#8A847C' }}>未言位置（金）</span>
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: DIMENSION_COLOR.knowledge }} />
+                  <span className="text-micro font-sans" style={{ color: '#8A847C' }}>已言 · 知识</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: DIMENSION_COLOR.experience }} />
+                  <span className="text-micro font-sans" style={{ color: '#8A847C' }}>已言 · 经验</span>
+                </div>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="w-3 h-3 rounded-full border" style={{ borderColor: VERDICT_RING.gold, borderStyle: 'dashed' }} />
+                  <span className="text-micro font-sans" style={{ color: '#8A847C' }}>未言 · 价值越高圈越大</span>
                 </div>
               </motion.div>
             )}
@@ -418,21 +465,37 @@ export default function Act3_Position() {
                   backgroundColor: '#FFFFFF',
                   border: '1px solid #E8E3D8',
                   boxShadow: '0 4px 12px rgba(28, 26, 24, 0.08)',
-                  maxWidth: 240,
+                  maxWidth: 280,
                 }}
               >
                 <p className="text-caption font-serif font-medium" style={{ color: '#1C1A18' }}>
                   {hoveredNode.label}
                 </p>
-                {hoveredNode.type === 'spoken' && hoveredNode.voteCount && (
-                  <p className="text-micro font-sans" style={{ color: '#8A847C' }}>
-                    {hoveredNode.voteCount >= 10000 ? `${(hoveredNode.voteCount / 10000).toFixed(1)}万` : hoveredNode.voteCount} 赞同
+                {hoveredNode.type === 'spoken' && (
+                  <p className="text-micro font-sans mt-0.5" style={{ color: '#8A847C' }}>
+                    {hoveredNode.dimension ? `${DIMENSION_LABEL[hoveredNode.dimension]} · ` : ''}
+                    {hoveredNode.answerCount ?? 0} 答 ·{' '}
+                    {(hoveredNode.upvotes ?? 0) >= 10000
+                      ? `${((hoveredNode.upvotes ?? 0) / 10000).toFixed(1)}万`
+                      : hoveredNode.upvotes ?? 0}{' '}
+                    赞同
                   </p>
                 )}
                 {hoveredNode.type === 'unspoken' && (
-                  <p className="text-micro font-sans" style={{ color: '#8A847C' }}>
-                    点击选中此间隙
-                  </p>
+                  <>
+                    <p className="text-micro font-sans mt-0.5" style={{ color: '#8A847C' }}>
+                      {hoveredNode.dimension ? `${DIMENSION_LABEL[hoveredNode.dimension]} · ` : ''}
+                      价值 {hoveredNode.potentialValue ?? '?'}/5
+                    </p>
+                    {hoveredNode.suggestedBackground && (
+                      <p className="text-micro font-sans mt-1" style={{ color: '#4A4641', lineHeight: 1.5 }}>
+                        建议背景：{hoveredNode.suggestedBackground}
+                      </p>
+                    )}
+                    <p className="text-micro font-sans mt-1" style={{ color: '#A07535' }}>
+                      点击选中此间隙
+                    </p>
+                  </>
                 )}
               </motion.div>
             )}
@@ -505,9 +568,11 @@ export default function Act3_Position() {
 
         {phase === 'done' && (
           <div className="flex flex-col gap-3">
-            {gaps.map((gap, idx) => {
+            {[...gaps]
+              .sort((a, b) => b.potential_value - a.potential_value)
+              .map((gap, idx) => {
               const isSelected = selectedGap?.id === gap.id;
-              const isGold = gap.audit_verdict === 'gold';
+              const verdict = verdictFor(gap.potential_value);
               const isAuditing = activeAudit === gap.id;
               const audit = auditResult[gap.id];
 
@@ -516,7 +581,7 @@ export default function Act3_Position() {
                   key={gap.id}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.3 + idx * 0.1 }}
+                  transition={{ delay: 0.3 + idx * 0.08 }}
                   onClick={() => setSelectedGap(isSelected ? null : gap)}
                   className="text-left p-5 rounded transition-all"
                   style={{
@@ -525,25 +590,29 @@ export default function Act3_Position() {
                     boxShadow: isSelected ? '0 2px 8px rgba(28, 26, 24, 0.06)' : 'none',
                   }}
                 >
-                  <div className="flex items-center gap-2 mb-2">
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
                     <span
                       className="px-2 py-0.5 rounded text-micro text-white font-sans font-medium"
-                      style={{
-                        backgroundColor: isGold ? '#4A6B42' : gap.audit_verdict === 'dead_end' ? '#8B3A2C' : '#A07535',
-                      }}
+                      style={{ backgroundColor: VERDICT_COLOR[verdict] }}
                     >
-                      {isGold ? '金' : gap.audit_verdict === 'dead_end' ? '死路' : '可疑'}
+                      {VERDICT_LABEL[verdict]} · {gap.potential_value}/5
                     </span>
-                    <h4 className="font-serif text-ui font-medium" style={{ color: '#1C1A18' }}>
+                    <span
+                      className="px-2 py-0.5 rounded text-micro font-sans"
+                      style={{ backgroundColor: '#F0EBE0', color: '#4A4641' }}
+                    >
+                      {DIMENSION_LABEL[gap.dimension]}
+                    </span>
+                    <h4 className="font-serif text-ui font-medium w-full" style={{ color: '#1C1A18' }}>
                       {gap.description}
                     </h4>
                   </div>
                   <p className="text-caption font-sans mb-3" style={{ color: '#4A4641', lineHeight: 1.6 }}>
                     {gap.reasoning}
                   </p>
-                  {gap.strongest_objection && (
+                  {gap.suggested_background && (
                     <div className="text-micro font-sans mb-2" style={{ color: '#8A847C' }}>
-                      最强反对：{gap.strongest_objection}
+                      建议背景：{gap.suggested_background}
                     </div>
                   )}
 

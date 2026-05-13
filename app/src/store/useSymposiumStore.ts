@@ -15,15 +15,29 @@ import type {
   EditorRoundResult,
   ZhihuUser,
   LLMProvider,
+  Cluster,
+  TerrainDimension,
+  TerrainMeta,
 } from '@/services/api';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+// Gap = blind spot from the TERRAIN model (Act 3 cartography).
+// Legacy fields (audit_verdict / strongest_objection / defense_strategy) are kept
+// optional so Act 6's "圆桌会" speeches continue to type-check; Act 3 derives
+// audit_verdict from potential_value for backward-compatible UI.
 export interface Gap {
   id: string;
   description: string;
   reasoning: string;
-  audit_verdict: 'gold' | 'questionable' | 'dead_end';
+  // ── New terrain fields ──
+  dimension: TerrainDimension;
+  potential_value: number; // 1..5
+  suggested_background: string;
+  x: number; // 0..100
+  y: number; // 0..100
+  // ── Legacy fields (optional, derived/populated as available) ──
+  audit_verdict?: 'gold' | 'questionable' | 'dead_end';
   strongest_objection?: string;
   defense_strategy?: string;
 }
@@ -58,10 +72,14 @@ interface SymposiumState {
 
   // Act 3 — 寻位 (Positioning)
   topAnswers: SearchItem[];
+  clusters: Cluster[];
+  terrainMeta: TerrainMeta | null;
   saidSet: string[];
   unsaidSet: Gap[];
   selectedGap: Gap | null;
   setTopAnswers: (a: SearchItem[]) => void;
+  setClusters: (c: Cluster[]) => void;
+  setTerrainMeta: (m: TerrainMeta | null) => void;
   setSaidSet: (s: string[]) => void;
   setUnsaidSet: (g: Gap[]) => void;
   setSelectedGap: (g: Gap | null) => void;
@@ -160,6 +178,8 @@ const initialState = {
 
   // Act 3
   topAnswers: [],
+  clusters: [],
+  terrainMeta: null,
   saidSet: [],
   unsaidSet: [],
   selectedGap: null,
@@ -228,6 +248,8 @@ export const useSymposiumStore = create<SymposiumState>((set) => ({
 
   // Act 3
   setTopAnswers: (a) => set({ topAnswers: a }),
+  setClusters: (c) => set({ clusters: c }),
+  setTerrainMeta: (m) => set({ terrainMeta: m }),
   setSaidSet: (s) => set({ saidSet: s }),
   setUnsaidSet: (g) => set({ unsaidSet: g }),
   setSelectedGap: (g) => set({ selectedGap: g }),

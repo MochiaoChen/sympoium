@@ -27,30 +27,77 @@ export const WANGQI_SYSTEM_PROMPT = `你是「望气者」，一位精通知乎�
   "summary": "整体趋势观察..."
 }`;
 
-// ─── 测绘师 (Cartographer) ───────────────────────────────────────────────────
+// ─── 测绘师 (Cartographer) — TERRAIN model ──────────────────────────────────
+// 答场地形：已言聚类 + 盲区，每项带语义坐标 (x/y 0–100) 与维度 (viewpoint/knowledge/experience)。
 
-export const CEHUI_SYSTEM_PROMPT = `你是「测绘师」，一位冷静理性的分析型学者。你手持星图与罗盘，擅长将复杂的信息 landscape 绘制成清晰的图谱。
+export const CEHUI_SYSTEM_PROMPT = `你是一个知乎内容生态分析师 ——「测绘师」。你的任务是阅读一组知乎回答摘要，做语义级聚类、识别盲区，并输出严格的 JSON。不要写正文，不要解释，只输出 JSON。`;
 
-你的职责：
-1. 分析知乎某问题下的已有回答，提取核心论点（已言说集）
-2. 识别未被充分讨论的角度（显著未言集）
-3. 每个未言角度给出：描述、推理、审计评级(gold/questionable/dead_end)
+export function buildCehuiUserPrompt(
+  questionTitle: string,
+  answers: { Title?: string; ContentType?: string; ContentText?: string | null; VoteUpCount?: number; CommentCount?: number; AuthorName?: string; AuthorityLevel?: string }[]
+): string {
+  const trimmed = answers.map((a) => ({
+    title: (a.Title ?? '').slice(0, 80),
+    type: a.ContentType ?? '',
+    upvotes: a.VoteUpCount ?? 0,
+    comments: a.CommentCount ?? 0,
+    author: a.AuthorName ?? '',
+    author_badge: a.AuthorityLevel ?? '',
+    summary: (a.ContentText ?? '').slice(0, 200),
+  }));
 
-输出格式（严格JSON，不要有任何markdown标记或额外文字）：
+  return `问题：「${questionTitle}」
+现有回答数：${trimmed.length}
+
+回答摘要列表（JSON）：
+${JSON.stringify(trimmed, null, 2)}
+
+请严格按以下 JSON 结构返回：
+
 {
-  "spoken_set": ["论点1", "论点2", ...],
-  "unspoken_set": [
+  "clusters": [
     {
-      "id": "gap-1",
-      "description": "未言角度描述",
-      "reasoning": "为什么这个角度有价值",
-      "audit_verdict": "gold",
-      "strongest_objection": "可能的反驳",
-      "defense_strategy": "如何回应反驳"
+      "cluster_id": "c1",
+      "label": "15字以内的核心立场",
+      "answer_count": 12,
+      "total_upvotes": 3456,
+      "representative_summary": "50字以内的代表性论述",
+      "dimension": "viewpoint",
+      "x": 0,
+      "y": 0
     }
   ],
-  "analysis_summary": "整体分析总结"
-}`;
+  "blind_spots": [
+    {
+      "gap_id": "g1",
+      "description": "尚无人从XX角度回答此问题",
+      "reasoning": "为什么这个角度有价值、为什么是真盲区",
+      "dimension": "viewpoint",
+      "potential_value": 4,
+      "suggested_background": "建议什么背景的人填补此空白",
+      "x": 0,
+      "y": 0
+    }
+  ],
+  "meta": {
+    "total_answers_analyzed": ${trimmed.length},
+    "saturation_level": "medium",
+    "dominant_dimension": "viewpoint"
+  }
+}
+
+字段约束：
+- dimension 只能取：viewpoint（立场）| knowledge（知识）| experience（经验）
+- x / y 是 0–100 的坐标，让语义相近的项靠近、语义对立的远离
+- potential_value 1–5（5=金，3=可写但需打磨，1=死路）
+- saturation_level 只能取：low | medium | high
+
+聚类规则：
+- 5 个说同一件事的回答合并为 1 个簇
+- 至少 3 个 cluster，3–6 个 blind_spot
+- 盲区要有洞察力：不是"没有 XX 职业的人"，而是"没有人从 XX 机制/经历/视角来解释这个现象"
+- reasoning 要具体说明为何这是真空白，不要套话`;
+}
 
 // ─── 问难者 (Inquisitor) ─────────────────────────────────────────────────────
 

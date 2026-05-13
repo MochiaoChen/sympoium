@@ -75,6 +75,44 @@ export interface EditorRoundResult {
   }[];
 }
 
+// ─── Act 3 — Terrain model (answer-field cartography) ────────────────────────
+
+export type TerrainDimension = 'viewpoint' | 'knowledge' | 'experience';
+
+export interface Cluster {
+  cluster_id: string;
+  label: string;
+  answer_count: number;
+  total_upvotes: number;
+  representative_summary: string;
+  dimension: TerrainDimension;
+  x: number;
+  y: number;
+}
+
+export interface BlindSpot {
+  gap_id: string;
+  description: string;
+  reasoning: string;
+  dimension: TerrainDimension;
+  potential_value: number;
+  suggested_background: string;
+  x: number;
+  y: number;
+}
+
+export interface TerrainMeta {
+  total_answers_analyzed: number;
+  saturation_level: 'low' | 'medium' | 'high';
+  dominant_dimension: TerrainDimension;
+}
+
+export interface TerrainResult {
+  clusters: Cluster[];
+  blind_spots: BlindSpot[];
+  meta: TerrainMeta;
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function getTimestamp(): string {
@@ -113,6 +151,29 @@ export async function searchGlobal(query: string, count: number = 10): Promise<S
   if (!res.ok) throw new Error(`Global search failed: ${res.status}`);
   const data = await res.json();
   return data.Data?.Items ?? [];
+}
+
+// Parallel zhihu_search + global_search, dedupe by (ContentType, ContentID),
+// sort by VoteUpCount desc. Mirrors AmongAnswers backend.zhihu.search_combined.
+export async function searchCombined(query: string): Promise<SearchItem[]> {
+  const [siteRes, globalRes] = await Promise.allSettled([
+    searchZhihu(query, 10),
+    searchGlobal(query, 20),
+  ]);
+  const merged: SearchItem[] = [];
+  if (siteRes.status === 'fulfilled') merged.push(...siteRes.value);
+  if (globalRes.status === 'fulfilled') merged.push(...globalRes.value);
+
+  const seen = new Set<string>();
+  const deduped: SearchItem[] = [];
+  for (const it of merged) {
+    const key = `${it.ContentType}:${it.ContentID}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(it);
+  }
+  deduped.sort((a, b) => (b.VoteUpCount ?? 0) - (a.VoteUpCount ?? 0));
+  return deduped;
 }
 
 export type LLMProvider = 'kimi' | 'deepseek';
@@ -358,4 +419,60 @@ function getDefaultProvider(): LLMProvider {
     if (stored === 'kimi' || stored === 'deepseek') return stored;
   } catch { /* ignore */ }
   return 'deepseek';
+}
+
+// ─── JSON-mode LLM helpers ───────────────────────────────────────────────────
+// Salvage a JSON object from a response that may be wrapped in code fences or
+// padded with prose. Mirrors AmongAnswers backend.kimi._strip_to_json.
+function stripToJson(text: string): string {
+  let t = text.trim();
+  if (t.startsWith('```')) {
+    t = t.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  }
+  const start = t.indexOf('{');
+  const end = t.lastIndexOf('}');
+  if (start !== -1 && end !== -1 && end > start) return t.slice(start, end + 1);
+  return t;
+}
+
+// DeepSeek call with response_format=json_object enforced.
+async function callDeepSeekJson(
+  messages: { role: string; content: string }[],
+  temperature: number,
+): Promise<string> {
+  const res = await fetch(`${DEEPSEEK_BASE}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${DEEPSEEK_KEY}`,
+    },
+    body: JSON.stringify({
+      model: 'deepseek-chat',
+      messages,
+      temperature,
+      response_format: { type: 'json_object' },
+    }),
+  });
+  if (!res.ok) throw new Error(`DeepSeek API error: ${res.status}`);
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content ?? '';
+}
+
+// Strict JSON-mode call with salvage fallback. Returns parsed JSON as T.
+// Uses response_format on DeepSeek; on Kimi (no native JSON mode), relies on
+// the prompt + stripToJson salvage.
+export async function callLLMJson<T = unknown>(
+  messages: { role: string; content: string }[],
+  temperature: number = 0.3,
+  provider?: LLMProvider,
+): Promise<T> {
+  const p = provider ?? getDefaultProvider();
+  const raw = p === 'deepseek'
+    ? await callDeepSeekJson(messages, temperature)
+    : await callKimi(messages, temperature);
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return JSON.parse(stripToJson(raw)) as T;
+  }
 }
