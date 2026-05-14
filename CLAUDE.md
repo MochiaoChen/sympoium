@@ -7,12 +7,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This repo is a single Vite SPA living under `app/`. Run all build/dev commands from there.
 
 ```
-app/                # the actual application
-PRD.md              # product spec — seven-act flow, agent personas, data model
-AGENTS.md           # detailed engineering guide (read this for deeper context)
-ui_guildline.md     # hard UI rules (colors, fonts, anti-patterns)
-知乎 api 手册.md     # Zhihu open-platform API reference
-plan.md             # MVP staging plan
+app/                          # the actual application
+AGENTS.md                     # detailed engineering guide (read this for deeper context)
+docs/PRD.md                   # product spec — seven-act flow, agent personas, data model
+docs/ui-guideline.md          # hard UI rules (colors, fonts, anti-patterns)
+docs/zhihu-api-reference.md   # Zhihu open-platform API reference
+docs/plan.md                  # MVP staging plan
+docs/mockups/                 # static HTML mockups (visual north stars)
+docs/personas/                # Act 5 roundtable persona source images
 ```
 
 `AGENTS.md` is the authoritative engineering guide and includes a full anti-pattern list, key-file index, and security caveats. Consult it before non-trivial changes.
@@ -49,6 +51,6 @@ Dev-server proxies (defined in `vite.config.ts`) bypass CORS for `/api/zhihu`, `
 
 - **Language**: comments, prompts, UI copy in Chinese; identifiers in English or pinyin. Agent codenames are pinyin.
 - **Typography**: Chinese body text uses **Noto Serif SC**, UI uses **Noto Sans SC**. Never substitute Inter/Roboto/Arial. Use Tailwind tokens (`font-serif`, `text-h1`, `bg-paper`, `text-ink-1`, `max-w-prose-narrow` …) — the design tokens are exhaustively defined in `tailwind.config.js`.
-- **Agent speech UI**: whenever an agent "speaks", lead with `<AgentBadge>` (8×8 color dot + serif name). **No chat bubbles, no circular avatars, no emoji icons.** See `ui_guildline.md` §反模式 for the full prohibition list (no glassmorphism, no purple gradients, no "AI" stickers, no red-green heatmaps — use cyan→orange, etc.).
+- **Agent speech UI**: whenever an agent "speaks", lead with `<AgentBadge>` (8×8 color dot + serif name). **No chat bubbles, no circular avatars, no emoji icons.** See `docs/ui-guideline.md` §反模式 for the full prohibition list (no glassmorphism, no purple gradients, no "AI" stickers, no red-green heatmaps — use cyan→orange, etc.).
 - **Backgrounds**: never pure white. Page = `#F7F4ED` (`bg-paper`), cards = `#FBF9F3`. Brand 绛红 `#5D2A2C` is reserved for primary CTA / active states / logo.
 - **Motion**: signature easing `[0.22, 0.61, 0.36, 1]`, 200–300ms for interactions, ≤400ms for scene transitions. No `bounce`.

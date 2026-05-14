@@ -77,11 +77,12 @@ app/
 ```
 
 项目根目录下还有以下关键文档：
-- `PRD.md` — 完整产品需求文档（七幕流程、Agent 人格、API 映射、数据模型）
-- `ui_guildline.md` — 硬规范级 UI 设计指南（色彩、字体、间距、组件规格、反模式清单）
-- `plan.md` — 构建计划（MVP 范围、Stage 划分）
-- `知乎 api 手册.md` — 知乎开放平台接口文档（Bearer 鉴权、搜索、热榜等）
-- `会饮-第六幕-mockup.html` — 第六幕圆桌会议的静态 HTML mockup，作为视觉北极星
+- `docs/PRD.md` — 完整产品需求文档（七幕流程、Agent 人格、API 映射、数据模型）
+- `docs/ui-guideline.md` — 硬规范级 UI 设计指南（色彩、字体、间距、组件规格、反模式清单）
+- `docs/plan.md` — 构建计划（MVP 范围、Stage 划分）
+- `docs/zhihu-api-reference.md` — 知乎开放平台接口文档（Bearer 鉴权、搜索、热榜等）
+- `docs/mockups/act6-roundtable.html` — 第六幕圆桌会议的静态 HTML mockup，作为视觉北极星
+- `docs/personas/` — Act 5 圆桌七位读者的人格肖像源文件（与 `app/public/avatars/` 同名）
 
 ---
 
@@ -179,7 +180,7 @@ Vite 配置中同时读取 `KIMI_API_KEY` / `VITE_KIMI_API_KEY` 以及 `ZHIHU_AC
 
 ### 6.2 样式规范
 
-项目遵循一份非常严格的 UI 规范（`ui_guildline.md`），核心原则：
+项目遵循一份非常严格的 UI 规范（`docs/ui-guideline.md`），核心原则：
 
 - **背景色**：`#F7F4ED`（宣纸米白），绝不用纯白做大面积背景。
 - **品牌色**：绛红 `#5D2A2C`，仅用于关键 CTA、激活状态、logo。
@@ -271,9 +272,9 @@ Tailwind 配置已完整覆盖这些 token，请优先使用 Tailwind 类名（�
 
 | 想了解什么 | 读哪个文件 |
 |------------|-----------|
-| 产品逻辑与七幕流程 | `PRD.md` |
-| 视觉设计规范 | `ui_guildline.md` |
-| 知乎 API 接口详情 | `知乎 api 手册.md` |
+| 产品逻辑与七幕流程 | `docs/PRD.md` |
+| 视觉设计规范 | `docs/ui-guideline.md` |
+| 知乎 API 接口详情 | `docs/zhihu-api-reference.md` |
 | 全局状态与数据模型 | `app/src/store/useSymposiumStore.ts` |
 | 所有 API 调用 | `app/src/services/api.ts` |
 | 所有 Agent Prompt | `app/src/data/agentPrompts.ts` |
