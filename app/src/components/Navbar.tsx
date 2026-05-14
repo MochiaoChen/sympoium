@@ -5,7 +5,7 @@
  * 时间轴 48px：6 个小圆点，已完成的幕用绛红实心圆，当前幕用绛红空心圆带 2px 边框，未到达的幕用墨色三级实心圆
  */
 
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { motion } from 'framer-motion';
 import { LogIn } from 'lucide-react';
 import { useSymposiumStore, ACT_NAMES } from '@/store/useSymposiumStore';
@@ -45,6 +45,38 @@ function ProviderSwitch() {
   );
 }
 
+function Avatar({ src, name }: { src: string | undefined; name: string }) {
+  // 知乎 picx.zhimg.com 有 Referer 防盗链，
+  // 默认 referrer 会被服务器拒绝返回 403；用 no-referrer 绕开；
+  // 即便如此仍可能失败，所以 onError 退化到首字徽标。
+  const [broken, setBroken] = useState(false);
+  if (!src || broken) {
+    return (
+      <div
+        className="w-7 h-7 rounded-full grid place-items-center text-micro font-serif font-medium"
+        style={{
+          backgroundColor: '#FBF9F3',
+          border: '1px solid #E8E3D8',
+          color: '#4A4641',
+        }}
+      >
+        {name.charAt(0)}
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt={name}
+      onError={() => setBroken(true)}
+      referrerPolicy="no-referrer"
+      crossOrigin="anonymous"
+      className="w-7 h-7 rounded-full object-cover"
+      style={{ border: '1px solid #E8E3D8' }}
+    />
+  );
+}
+
 function UserArea() {
   const zhihuUser = useSymposiumStore((s) => s.zhihuUser);
   const logout = useSymposiumStore((s) => s.logout);
@@ -55,25 +87,7 @@ function UserArea() {
         <ProviderSwitch />
         <div className="flex items-center gap-3 text-caption font-sans" style={{ color: '#8A847C' }}>
           <span>{zhihuUser.fullname}</span>
-          {zhihuUser.avatar_path ? (
-            <img
-              src={zhihuUser.avatar_path}
-              alt={zhihuUser.fullname}
-              className="w-7 h-7 rounded-full object-cover"
-              style={{ border: '1px solid #E8E3D8' }}
-            />
-          ) : (
-            <div
-              className="w-7 h-7 rounded-full grid place-items-center text-micro font-serif font-medium"
-              style={{
-                backgroundColor: '#FBF9F3',
-                border: '1px solid #E8E3D8',
-                color: '#4A4641',
-              }}
-            >
-              {zhihuUser.fullname.charAt(0)}
-            </div>
-          )}
+          <Avatar src={zhihuUser.avatar_path} name={zhihuUser.fullname} />
           <button
             onClick={logout}
             className="text-micro underline"
@@ -156,78 +170,100 @@ export default function Navbar() {
         <UserArea />
       </div>
 
-      {/* Timeline */}
+      {/* Timeline — 6 等宽列；连线由一条贯穿整行的背景线 + 进度叠加层组成，
+          这样所有圆点都精确落在列中点，间隔严格相等。 */}
       <div
         className="h-12 flex items-center justify-center"
         style={{ borderTop: '1px solid #E8E3D8' }}
       >
-        <div className="flex items-center gap-0 max-w-2xl w-full justify-center px-4">
-          {Array.from({ length: 6 }, (_, i) => i + 1).map((act, idx) => {
+        <div
+          className="relative max-w-2xl w-full px-4"
+          style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)' }}
+        >
+          {/* 背景连接线：第一个圆点中心 → 最后一个圆点中心。
+              6 等宽列时圆点中心位于 (i+0.5)/6 的水平位置，
+              所以两端各留 1/12 = 8.333% 的内边距，再叠加 px-4 的左右内边距偏移。 */}
+          <div
+            className="absolute pointer-events-none"
+            style={{
+              left: 'calc(16px + (100% - 32px) / 12)',
+              right: 'calc(16px + (100% - 32px) / 12)',
+              top: 'calc(50% - 8px)',
+              height: 1,
+              backgroundColor: '#E8E3D8',
+            }}
+          />
+          {/* 进度线：从第 1 个圆点中心到当前所在圆点中心。 */}
+          <div
+            className="absolute pointer-events-none"
+            style={{
+              left: 'calc(16px + (100% - 32px) / 12)',
+              top: 'calc(50% - 8px)',
+              height: 1,
+              width: `calc((100% - 32px) * 5 / 6 * ${(currentAct - 1) / 5})`,
+              backgroundColor: '#5D2A2C',
+              opacity: 0.4,
+              transition: 'width 0.3s cubic-bezier(0.22, 0.61, 0.36, 1)',
+            }}
+          />
+
+          {Array.from({ length: 6 }, (_, i) => i + 1).map((act) => {
             const isCompleted = act < currentAct;
             const isCurrent = act === currentAct;
             const isUnlocked = act <= currentAct + 1;
 
             return (
-              <div key={act} className="flex items-center flex-1">
-                {idx > 0 && (
-                  <div
-                    className="flex-1 h-px mx-2"
-                    style={{
-                      backgroundColor: act <= currentAct ? '#5D2A2C' : '#E8E3D8',
-                      opacity: act <= currentAct ? 0.4 : 1,
-                    }}
-                  />
-                )}
-
-                <button
-                  onClick={() => handleClick(act)}
-                  disabled={!isUnlocked}
-                  className="flex flex-col items-center gap-1 relative"
-                  style={{ cursor: isUnlocked ? 'pointer' : 'not-allowed' }}
+              <button
+                key={act}
+                onClick={() => handleClick(act)}
+                disabled={!isUnlocked}
+                className="flex flex-col items-center gap-1 relative bg-transparent"
+                style={{ cursor: isUnlocked ? 'pointer' : 'not-allowed' }}
+              >
+                <motion.div
+                  whileHover={isUnlocked ? { scale: 1.15 } : {}}
+                  className="relative flex items-center justify-center"
+                  style={{ backgroundColor: '#F7F4ED', zIndex: 1, padding: '0 2px' }}
                 >
-                  <motion.div
-                    whileHover={isUnlocked ? { scale: 1.15 } : {}}
-                    className="relative flex items-center justify-center"
-                  >
-                    {isCurrent ? (
-                      <div
-                        className="rounded-full"
-                        style={{
-                          width: 12,
-                          height: 12,
-                          backgroundColor: '#F7F4ED',
-                          border: '2px solid #5D2A2C',
-                          boxShadow: '0 0 0 4px rgba(93, 42, 44, 0.08)',
-                        }}
-                      />
-                    ) : (
-                      <div
-                        className="rounded-full"
-                        style={{
-                          width: 8,
-                          height: 8,
-                          backgroundColor: isCompleted ? '#5D2A2C' : '#B8B1A5',
-                        }}
-                      />
-                    )}
-                  </motion.div>
+                  {isCurrent ? (
+                    <div
+                      className="rounded-full"
+                      style={{
+                        width: 12,
+                        height: 12,
+                        backgroundColor: '#F7F4ED',
+                        border: '2px solid #5D2A2C',
+                        boxShadow: '0 0 0 4px rgba(93, 42, 44, 0.08)',
+                      }}
+                    />
+                  ) : (
+                    <div
+                      className="rounded-full"
+                      style={{
+                        width: 8,
+                        height: 8,
+                        backgroundColor: isCompleted ? '#5D2A2C' : '#B8B1A5',
+                      }}
+                    />
+                  )}
+                </motion.div>
 
-                  <span
-                    className="text-micro whitespace-nowrap font-sans"
-                    style={{
-                      color: isCurrent ? '#5D2A2C' : isCompleted ? '#4A4641' : '#B8B1A5',
-                      fontWeight: isCurrent ? 500 : 400,
-                      letterSpacing: '0.08em',
-                    }}
-                  >
-                    {ACT_NAMES[act]}
-                  </span>
-                </button>
-              </div>
+                <span
+                  className="text-micro whitespace-nowrap font-sans"
+                  style={{
+                    color: isCurrent ? '#5D2A2C' : isCompleted ? '#4A4641' : '#B8B1A5',
+                    fontWeight: isCurrent ? 500 : 400,
+                    letterSpacing: '0.08em',
+                  }}
+                >
+                  {ACT_NAMES[act]}
+                </span>
+              </button>
             );
           })}
         </div>
       </div>
+
     </header>
   );
 }

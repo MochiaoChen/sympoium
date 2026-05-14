@@ -12,7 +12,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Globe, MessagesSquare, AlertCircle, User as UserIcon } from 'lucide-react';
-import { callLLM, callZhida } from '@/services/api';
+import { callLLM, callZhidaStream } from '@/services/api';
 import LoadingDots from '@/components/LoadingDots';
 
 type Mode = 'deepseek' | 'zhida';
@@ -21,6 +21,7 @@ interface ChatMsg {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  reasoning?: string; // zhida-thinking 的思考过程；与 content 并存
   provider?: Mode; // 标记是哪个模型答的（切换 provider 时区分）
 }
 
@@ -61,19 +62,51 @@ export default function ChatPanel() {
     const history = next.map((m) => ({ role: m.role, content: m.content }));
 
     try {
-      let reply: string;
       if (mode === 'zhida') {
-        reply = await callZhida(history, 'zhida-thinking-1p5');
+        // zhida-thinking-1p5 推理可达 17s+，TencentEdgeOne 对非 stream 请求会在 30s 前
+        // 返 554；只能走 streaming，边推理边把 token append 到这条 assistant 消息。
+        // 思考过程（reasoning_content）和最终答案（content）分开累计。
+        const aiId = `a-${Date.now()}`;
+        setMessages((prev) => [
+          ...prev,
+          { id: aiId, role: 'assistant', content: '', reasoning: '', provider: 'zhida' },
+        ]);
+        await callZhidaStream(
+          history,
+          (chunk, kind) => {
+            setMessages((prev) =>
+              prev.map((m) => {
+                if (m.id !== aiId) return m;
+                if (kind === 'reasoning') return { ...m, reasoning: (m.reasoning ?? '') + chunk };
+                return { ...m, content: m.content + chunk };
+              }),
+            );
+          },
+          'zhida-thinking-1p5',
+        );
+        // Stream 结束后，若 content 还是空（模型只产出推理就停了），用占位提示
+        setMessages((prev) =>
+          prev.map((m) => {
+            if (m.id !== aiId) return m;
+            if (m.content.trim() !== '') return m;
+            return {
+              ...m,
+              content: (m.reasoning ?? '').trim()
+                ? '（模型只产出了推理，未给出最终回答 —— 见下方思考过程）'
+                : '（模型返回为空）',
+            };
+          }),
+        );
       } else {
-        reply = await callLLM(history, 0.7, 'deepseek');
+        const reply = await callLLM(history, 0.7, 'deepseek');
+        const aiMsg: ChatMsg = {
+          id: `a-${Date.now()}`,
+          role: 'assistant',
+          content: reply.trim() || '（模型返回为空）',
+          provider: 'deepseek',
+        };
+        setMessages((prev) => [...prev, aiMsg]);
       }
-      const aiMsg: ChatMsg = {
-        id: `a-${Date.now()}`,
-        role: 'assistant',
-        content: reply.trim() || '（模型返回为空）',
-        provider: mode,
-      };
-      setMessages((prev) => [...prev, aiMsg]);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error('[ChatPanel] send failed:', msg);
@@ -176,21 +209,48 @@ export default function ChatPanel() {
               >
                 {m.role === 'user' ? <UserIcon size={11} /> : m.provider === 'zhida' ? '直' : 'D'}
               </div>
-              {/* Bubble */}
-              <div
-                className="px-3 py-2 rounded text-caption font-serif"
-                style={{
-                  backgroundColor: m.role === 'user' ? '#5D2A2C' : '#FFFFFF',
-                  color: m.role === 'user' ? '#FFFFFF' : '#1C1A18',
-                  border: m.role === 'user' ? 'none' : '1px solid #E8E3D8',
-                  lineHeight: 1.7,
-                  letterSpacing: '0.015em',
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                  maxWidth: '85%',
-                }}
-              >
-                {m.content}
+              {/* Bubble（assistant 时如果有 reasoning，分两段：思考过程 + 回答） */}
+              <div className="flex flex-col gap-1.5" style={{ maxWidth: '85%' }}>
+                {m.role === 'assistant' && m.reasoning && m.reasoning.trim() && (
+                  <details
+                    open={!m.content || m.content.trim() === ''}
+                    className="rounded text-micro font-serif"
+                    style={{
+                      backgroundColor: '#F4F1EA',
+                      border: '1px dashed #D8D2C4',
+                      color: '#4A4641',
+                      padding: '6px 10px',
+                      lineHeight: 1.65,
+                    }}
+                  >
+                    <summary
+                      className="cursor-pointer select-none font-sans"
+                      style={{ color: '#8A847C', letterSpacing: '0.05em' }}
+                    >
+                      思考过程
+                    </summary>
+                    <div
+                      className="mt-1"
+                      style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+                    >
+                      {m.reasoning}
+                    </div>
+                  </details>
+                )}
+                <div
+                  className="px-3 py-2 rounded text-caption font-serif"
+                  style={{
+                    backgroundColor: m.role === 'user' ? '#5D2A2C' : '#FFFFFF',
+                    color: m.role === 'user' ? '#FFFFFF' : '#1C1A18',
+                    border: m.role === 'user' ? 'none' : '1px solid #E8E3D8',
+                    lineHeight: 1.7,
+                    letterSpacing: '0.015em',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                  }}
+                >
+                  {m.content}
+                </div>
               </div>
             </motion.div>
           ))}

@@ -8,13 +8,14 @@
 
 import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Wand2, Check, Eye, EyeOff } from 'lucide-react';
-import { useSymposiumStore } from '@/store/useSymposiumStore';
+import { Wand2, Check } from 'lucide-react';
+import { useSymposiumStore, type WritingSkeleton } from '@/store/useSymposiumStore';
 import AgentBadge from '@/components/AgentBadge';
 import ChatPanel from '@/components/ChatPanel';
-import MarkdownPreview from '@/components/MarkdownPreview';
+import MarkdownEditor from '@/components/MarkdownEditor';
 import LoadingDots from '@/components/LoadingDots';
-import { callLLM } from '@/services/api';
+import PersonalLensHint from '@/components/PersonalLensHint';
+import { callLLMJson } from '@/services/api';
 import { SKELETON_GENERATION_PROMPT } from '@/data/agentPrompts';
 import { formatZhihuTypography } from '@/lib/typography';
 
@@ -24,11 +25,11 @@ export default function Act4_Draft() {
   const setDraft = useSymposiumStore((s) => s.setDraft);
   const skeleton = useSymposiumStore((s) => s.skeleton);
   const setSkeleton = useSymposiumStore((s) => s.setSkeleton);
+  const zhihuUser = useSymposiumStore((s) => s.zhihuUser);
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [justFormatted, setJustFormatted] = useState(false);
-  const [showPreview, setShowPreview] = useState(true);
 
   const handleFormat = useCallback(() => {
     const next = formatZhihuTypography(draft);
@@ -48,12 +49,22 @@ export default function Act4_Draft() {
     setIsGenerating(true);
     setError(null);
     try {
-      const prompt = `${SKELETON_GENERATION_PROMPT}\n\n写作角度：${selectedGap.description}\n推理：${selectedGap.reasoning}`;
-      const res = await callLLM([
-        { role: 'system', content: prompt },
-        { role: 'user', content: '请生成写作骨架，输出JSON。' },
-      ]);
-      const json = JSON.parse(res);
+      // 登录用户：把 headline / description 注入到执笔者的系统 Prompt，
+      // 让生成的标题、钩子、论点序列更贴合作者既有的视角。
+      const personaBlock = zhihuUser
+        ? `\n\n【作者画像】\n昵称：${zhihuUser.fullname}` +
+          (zhihuUser.headline ? `\n简介：${zhihuUser.headline}` : '') +
+          (zhihuUser.description ? `\n自述：${zhihuUser.description}` : '') +
+          `\n请让生成的标题、开头钩子与论点序列贴合该作者的视角与语气；不要直接复述简介，而是体现其经验与立场。`
+        : '';
+      const prompt = `${SKELETON_GENERATION_PROMPT}${personaBlock}\n\n写作角度：${selectedGap.description}\n推理：${selectedGap.reasoning}`;
+      const json = await callLLMJson<WritingSkeleton>(
+        [
+          { role: 'system', content: prompt },
+          { role: 'user', content: '请生成写作骨架，输出JSON。' },
+        ],
+        0.3,
+      );
       setSkeleton(json);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -63,7 +74,7 @@ export default function Act4_Draft() {
     } finally {
       setIsGenerating(false);
     }
-  }, [selectedGap, setSkeleton]);
+  }, [selectedGap, setSkeleton, zhihuUser]);
 
   return (
     <div className="h-full flex gap-4 px-6 py-6 overflow-hidden">
@@ -74,26 +85,16 @@ export default function Act4_Draft() {
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <div className="flex items-center justify-between mb-4 gap-3">
-          <h3 className="font-serif text-h3 font-bold" style={{ color: '#1C1A18' }}>
-            你的草稿
-          </h3>
+        <div className="flex items-center justify-between mb-2 gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <h3 className="font-serif text-h3 font-bold shrink-0" style={{ color: '#1C1A18' }}>
+              你的草稿
+            </h3>
+            <div className="min-w-0">
+              <PersonalLensHint hint="执笔者会按你的视角生成骨架" />
+            </div>
+          </div>
           <div className="flex items-center gap-3">
-            <motion.button
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.97 }}
-              onClick={() => setShowPreview((v) => !v)}
-              title={showPreview ? '隐藏预览，编辑器占满' : '显示预览'}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded text-caption font-sans font-medium transition-all"
-              style={{
-                border: '1px solid #4A4641',
-                color: '#1C1A18',
-                backgroundColor: showPreview ? 'rgba(93,42,44,0.08)' : 'transparent',
-              }}
-            >
-              {showPreview ? <Eye size={14} /> : <EyeOff size={14} />}
-              {showPreview ? '预览' : '只编辑'}
-            </motion.button>
             <motion.button
               whileHover={draft ? { scale: 1.03 } : {}}
               whileTap={draft ? { scale: 0.97 } : {}}
@@ -141,45 +142,18 @@ export default function Act4_Draft() {
             </span>
           </div>
         </div>
-        <div className="flex-1 flex gap-3 min-h-0">
-          {/* Editor textarea */}
+        <div className="flex-1 min-h-0">
+          {/* CodeMirror 单栏「实时预览」编辑器（Obsidian Live Preview 风格） */}
           <div
-            className="flex-1 rounded overflow-hidden min-w-0"
+            className="h-full rounded overflow-hidden"
             style={{ backgroundColor: '#FBF9F3', border: '1px solid #E8E3D8' }}
           >
-            <textarea
+            <MarkdownEditor
               value={draft}
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={setDraft}
               placeholder="在这里写下你的草稿，或者粘贴已有内容..."
-              className="w-full h-full p-6 resize-none outline-none font-serif text-body-lg"
-              style={{
-                backgroundColor: 'transparent',
-                color: '#1C1A18',
-                lineHeight: 1.75,
-                letterSpacing: '0.02em',
-              }}
             />
           </div>
-          {/* Live markdown preview */}
-          <AnimatePresence>
-            {showPreview && (
-              <motion.div
-                initial={{ opacity: 0, width: 0 }}
-                animate={{ opacity: 1, width: '50%' }}
-                exit={{ opacity: 0, width: 0 }}
-                transition={{ duration: 0.25 }}
-                className="rounded overflow-hidden flex-shrink-0"
-                style={{
-                  backgroundColor: '#FFFFFF',
-                  border: '1px solid #E8E3D8',
-                }}
-              >
-                <div className="h-full overflow-y-auto">
-                  <MarkdownPreview source={draft} />
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
         </div>
       </motion.div>
 

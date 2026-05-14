@@ -13,6 +13,7 @@ import type { SearchItem } from '@/services/api';
 import { useSymposiumStore } from '@/store/useSymposiumStore';
 import AgentBadge from '@/components/AgentBadge';
 import LoadingDots from '@/components/LoadingDots';
+import PersonalLensHint from '@/components/PersonalLensHint';
 
 export default function Act2_QuestionSelect() {
   const selectedTopic = useSymposiumStore((s) => s.selectedTopic);
@@ -129,7 +130,10 @@ export default function Act2_QuestionSelect() {
             <h2 className="font-serif text-h2 font-bold" style={{ color: '#1C1A18' }}>
               {selectedTopic}
             </h2>
-            <div className="mt-3 h-px w-full" style={{ backgroundColor: '#E8E3D8' }} />
+            <div className="mt-3 mb-3">
+              <PersonalLensHint hint="按你的兴趣方向筛选最值得你写的问题" />
+            </div>
+            <div className="h-px w-full" style={{ backgroundColor: '#E8E3D8' }} />
           </motion.div>
         )}
 

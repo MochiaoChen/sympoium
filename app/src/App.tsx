@@ -22,7 +22,7 @@ function OAuthHandler() {
     if (!search) return;
 
     const params = new URLSearchParams(search);
-    const code = params.get('code');
+    const code = params.get('authorization_code') ?? params.get('code');
     if (!code) return;
 
     // Clean the code from URL so refresh doesn't re-trigger
