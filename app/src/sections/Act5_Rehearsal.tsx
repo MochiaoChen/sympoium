@@ -284,16 +284,23 @@ export default function Act5_Rehearsal() {
               >
                 <motion.div
                   animate={{
-                    scale: isActive ? 1.2 : 1,
+                    scale: isActive ? 1.12 : 1,
                     boxShadow: isActive ? `0 0 0 4px ${sp.colorSoft}` : '0 0 0 0px transparent',
                   }}
-                  className="rounded-full"
+                  className="rounded-full overflow-hidden bg-white"
                   style={{
-                    width: isActive ? 12 : 10,
-                    height: isActive ? 12 : 10,
-                    backgroundColor: sp.color,
+                    width: isActive ? 64 : 52,
+                    height: isActive ? 64 : 52,
+                    border: `2px solid ${isActive ? sp.color : '#E8E3D8'}`,
                   }}
-                />
+                >
+                  <img
+                    src={`./avatars/${sp.key}.png`}
+                    alt={sp.name}
+                    className="w-full h-full object-cover"
+                    draggable={false}
+                  />
+                </motion.div>
                 <span
                   className="font-serif font-medium text-ui whitespace-nowrap"
                   style={{

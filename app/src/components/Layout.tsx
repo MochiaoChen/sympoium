@@ -22,14 +22,19 @@ export default function Layout({ children }: LayoutProps) {
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      const setCurrentAct = useSymposiumStore.getState().setCurrentAct;
-      if (e.key === 'ArrowRight' || e.key === ' ') {
-        e.preventDefault();
-        if (currentAct < 7) setCurrentAct(currentAct + 1);
-      } else if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        if (currentAct > 1) setCurrentAct(currentAct - 1);
-      } else if (e.key >= '1' && e.key <= '7') {
+      // 仅保留数字键跳转；左右键已禁用，避免在编辑/输入场景误触。
+      // 数字键也要避开输入态：当焦点在 textarea / input / contentEditable 时不响应。
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      const isTyping =
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        target?.isContentEditable === true;
+      if (isTyping) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      if (e.key >= '1' && e.key <= '7') {
+        const setCurrentAct = useSymposiumStore.getState().setCurrentAct;
         const act = parseInt(e.key, 10);
         if (act <= currentAct + 1) setCurrentAct(act);
       }

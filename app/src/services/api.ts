@@ -357,11 +357,12 @@ export function getZhihuAuthUrl(): string {
 }
 
 export async function exchangeCodeForToken(code: string): Promise<{ access_token: string; expires_in: number }> {
+  // curl 验证：openapi.zhihu.com/access_token 实际只接受 form-encoded；
+  // 405 的真正原因是 openresty 看到带 Origin: http://localhost 的 POST 就拒掉，
+  // 由 vite.config.ts 的代理把 Origin/Referer 去掉来绕开。
   const res = await fetch('/api/zhihu-oauth/access_token', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       app_id: ZHIHU_APP_ID,
       app_key: ZHIHU_APP_KEY,
@@ -370,9 +371,12 @@ export async function exchangeCodeForToken(code: string): Promise<{ access_token
       code,
     }).toString(),
   });
-  if (!res.ok) throw new Error(`OAuth token exchange failed: ${res.status}`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`OAuth token exchange failed: ${res.status}${body ? ` — ${body.slice(0, 200)}` : ''}`);
+  }
   const data = await res.json();
-  if (!data.access_token) throw new Error('OAuth response missing access_token');
+  if (!data.access_token) throw new Error(`OAuth response missing access_token: ${JSON.stringify(data).slice(0, 200)}`);
   return { access_token: data.access_token, expires_in: data.expires_in ?? 3600 };
 }
 
@@ -447,14 +451,19 @@ export async function callZhida(
     headers: zhidaHeaders(),
     body: JSON.stringify({ model, messages }),
   });
-  if (!res.ok) throw new Error(`Zhida API error: ${res.status}`);
+  if (!res.ok) {
+    // 554 等非标准状态码常常来自上游：把响应体露出来，便于定位
+    const body = await res.text().catch(() => '');
+    const snippet = body.slice(0, 300);
+    throw new Error(`Zhida API error: ${res.status}${snippet ? ` — ${snippet}` : ''}`);
+  }
   const data = await res.json();
   return data.choices?.[0]?.message?.content ?? '';
 }
 
 export async function callZhidaStream(
   messages: { role: string; content: string }[],
-  onChunk: (chunk: string) => void,
+  onChunk: (chunk: string, kind: 'content' | 'reasoning') => void,
   model: ZhidaModel = 'zhida-thinking-1p5',
 ): Promise<void> {
   const res = await fetch('/api/zhihu/v1/chat/completions', {
@@ -484,8 +493,15 @@ export async function callZhidaStream(
         if (jsonStr === '[DONE]') return;
         try {
           const json = JSON.parse(jsonStr);
-          const delta = json.choices?.[0]?.delta?.content;
-          if (delta) onChunk(delta);
+          const delta = json.choices?.[0]?.delta;
+          if (!delta) continue;
+          // zhida-thinking-1p5 把思考过程放在 reasoning_content，最终回答才在 content。
+          if (typeof delta.reasoning_content === 'string' && delta.reasoning_content) {
+            onChunk(delta.reasoning_content, 'reasoning');
+          }
+          if (typeof delta.content === 'string' && delta.content) {
+            onChunk(delta.content, 'content');
+          }
         } catch {
           // ignore malformed JSON
         }

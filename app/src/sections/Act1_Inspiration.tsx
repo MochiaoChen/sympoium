@@ -5,13 +5,53 @@
  * 用户选择一个目标问题（或主题）。
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { TrendingUp, ExternalLink, Sparkles } from 'lucide-react';
 import { fetchHotList } from '@/services/api';
+import type { HotListItem } from '@/services/api';
 import { useSymposiumStore } from '@/store/useSymposiumStore';
 import AgentBadge from '@/components/AgentBadge';
 import LoadingDots from '@/components/LoadingDots';
+
+// 把用户简介拆成短关键词（中文按 2/3 字 n-gram；英文/词按整词），
+// 再用关键词出现次数给热榜条目打分，做一次稳定的「为你重排」。
+function extractKeywords(text: string | undefined): string[] {
+  if (!text) return [];
+  const cleaned = text.replace(/[\s,，、。;；:：!！?？""''「」（）()\[\]【】]+/g, ' ').trim();
+  if (!cleaned) return [];
+  const tokens = new Set<string>();
+  for (const seg of cleaned.split(/\s+/)) {
+    if (!seg) continue;
+    // 英文/数字整段视作一个词
+    if (/^[\w-]+$/.test(seg)) {
+      if (seg.length >= 2) tokens.add(seg.toLowerCase());
+      continue;
+    }
+    // 中文：2/3 字 n-gram
+    for (let n = 2; n <= 3; n++) {
+      for (let i = 0; i + n <= seg.length; i++) {
+        tokens.add(seg.slice(i, i + n));
+      }
+    }
+  }
+  return Array.from(tokens);
+}
+
+function scoreItem(item: HotListItem, keywords: string[]): number {
+  if (keywords.length === 0) return 0;
+  const haystack = `${item.Title} ${item.Summary ?? ''}`.toLowerCase();
+  let score = 0;
+  for (const kw of keywords) {
+    let idx = 0;
+    while ((idx = haystack.indexOf(kw, idx)) !== -1) {
+      // 较长的关键词命中更稀少，权重高一点
+      score += kw.length >= 3 ? 2 : 1;
+      idx += kw.length;
+    }
+  }
+  return score;
+}
 
 export default function Act1_Inspiration() {
   const hotList = useSymposiumStore((s) => s.hotList);
@@ -48,6 +88,20 @@ export default function Act1_Inspiration() {
   const handleCustomSubmit = useCallback(() => {
     if (customInput.trim()) setSelectedTopic(customInput.trim());
   }, [customInput, setSelectedTopic]);
+
+  // 登录后：按 headline + description 关键词给热榜重排（稳定排序，分数为 0 保持原次序）
+  const rankedHotList = useMemo(() => {
+    if (!zhihuUser) return hotList;
+    const keywords = [
+      ...extractKeywords(zhihuUser.headline),
+      ...extractKeywords(zhihuUser.description),
+    ];
+    if (keywords.length === 0 || hotList.length === 0) return hotList;
+    return hotList
+      .map((item, originalIdx) => ({ item, originalIdx, s: scoreItem(item, keywords) }))
+      .sort((a, b) => (b.s - a.s) || (a.originalIdx - b.originalIdx))
+      .map((x) => x.item);
+  }, [hotList, zhihuUser]);
 
   return (
     <div className="h-full flex flex-col items-center px-4 py-8 overflow-y-auto">
@@ -161,7 +215,7 @@ export default function Act1_Inspiration() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {hotList.slice(0, 9).map((item, idx) => {
+              {rankedHotList.slice(0, 9).map((item, idx) => {
                 const isSelected = selectedTopic === item.Title;
                 const crossScore = Math.max(60, 95 - idx * 4);
 

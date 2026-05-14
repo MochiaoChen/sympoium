@@ -15,6 +15,7 @@ import { useSymposiumStore } from '@/store/useSymposiumStore';
 import type { Gap } from '@/store/useSymposiumStore';
 import AgentBadge from '@/components/AgentBadge';
 import LoadingDots from '@/components/LoadingDots';
+import PersonalLensHint from '@/components/PersonalLensHint';
 import { callLLMJson, searchCombined } from '@/services/api';
 import { CEHUI_SYSTEM_PROMPT, buildCehuiUserPrompt, WENNAN_SYSTEM_PROMPT } from '@/data/agentPrompts';
 
@@ -607,6 +608,7 @@ export default function Act3_Position() {
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.5, delay: 0.2 }}
       >
+        <PersonalLensHint hint="按你的写作脉络优先看这些间隙" />
         <div className="flex items-center justify-between">
           <h3 className="font-serif text-h3 font-bold" style={{ color: '#1C1A18' }}>
             可写间隙清单
